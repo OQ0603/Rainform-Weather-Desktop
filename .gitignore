@@ -1,0 +1,17 @@
+node_modules/
+dist/
+release/
+test-results/
+.DS_Store
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+.cache/
+.coverage/
+.video-work/
+exports/
+.private-backups/
+.claude/
+ChatGPT Image*.png

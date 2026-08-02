@@ -1,0 +1,99 @@
+{
+  "name": "rainform",
+  "version": "2.1.0",
+  "private": true,
+  "description": "A Windows desktop weather app that drives the original Rainform Three.js landscape with real city precipitation.",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "author": "afterimage",
+  "contributors": [
+    "OQ0603"
+  ],
+  "homepage": "https://github.com/OQ0603/Rainform-Weather-Desktop",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OQ0603/Rainform-Weather-Desktop.git"
+  },
+  "bugs": {
+    "url": "https://github.com/OQ0603/Rainform-Weather-Desktop/issues"
+  },
+  "type": "module",
+  "main": "electron/main.mjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@11.9.0",
+  "scripts": {
+    "audio:generate": "node scripts/generate-rain-audio.mjs",
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "start": "electron .",
+    "test": "node --test tests/weather-service.test.mjs tests/ui-contract.test.mjs",
+    "test:integration": "node --test tests/weather-live.integration.mjs",
+    "test:desktop": "node scripts/electron-smoke.mjs",
+    "check:project": "node scripts/check-project.mjs",
+    "check:dist": "node scripts/check-dist.mjs",
+    "check": "pnpm run check:project && pnpm run test && pnpm run build && pnpm run check:dist",
+    "pack:dir": "pnpm run check && electron-builder --win --x64 --dir",
+    "dist:win": "pnpm run check && electron-builder --win nsis --x64"
+  },
+  "dependencies": {
+    "three": "^0.165.0"
+  },
+  "devDependencies": {
+    "electron": "42.7.0",
+    "electron-builder": "26.15.3",
+    "playwright": "1.62.1",
+    "vite": "^6.4.3"
+  },
+  "build": {
+    "appId": "io.local.rainform.weatherdesktop",
+    "productName": "Rainform Weather Desktop",
+    "artifactName": "Rainform-Weather-Desktop-${version}-x64.${ext}",
+    "electronDist": "node_modules/electron/dist",
+    "asar": true,
+    "compression": "maximum",
+    "npmRebuild": false,
+    "electronLanguages": [
+      "zh-CN",
+      "en-US"
+    ],
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      "LICENSE",
+      "NOTICE.md",
+      "THIRD_PARTY_NOTICES.md"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "requestedExecutionLevel": "asInvoker",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Rainform Weather Desktop",
+      "deleteAppDataOnUninstall": false
+    }
+  },
+  "overrides": {
+    "postcss": "8.5.23"
+  }
+}
