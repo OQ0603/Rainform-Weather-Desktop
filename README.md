@@ -2,7 +2,6 @@
 
 [![Release](https://img.shields.io/github/v/release/OQ0603/Rainform-Weather-Desktop?display_name=tag&sort=semver)](https://github.com/OQ0603/Rainform-Weather-Desktop/releases/latest)
 [![Windows x64](https://img.shields.io/badge/Windows-x64-0078d4?logo=windows11)](https://github.com/OQ0603/Rainform-Weather-Desktop/releases/latest)
-[![CI](https://github.com/OQ0603/Rainform-Weather-Desktop/actions/workflows/ci.yml/badge.svg)](https://github.com/OQ0603/Rainform-Weather-Desktop/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-PolyForm_Noncommercial_1.0.0-4c4c4c)](LICENSE)
 
 > 基于 [afterimage-lab/Rainform](https://github.com/afterimage-lab/Rainform) 制作的非官方、限非商业用途 Windows 桌面衍生版。

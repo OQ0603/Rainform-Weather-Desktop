@@ -5,7 +5,7 @@
 - `check-project.mjs` validates licensing metadata, required notices, translation parity and production safeguards.
 - `check-dist.mjs` validates the generated `dist/` directory and rejects source maps or development tuning controls.
 
-These scripts run through `pnpm run check` and GitHub Actions.
+These scripts run locally through `pnpm run check`.
 
 ## Social media utilities
 
