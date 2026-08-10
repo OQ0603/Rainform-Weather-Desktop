@@ -41,7 +41,7 @@
     "three": "^0.165.0"
   },
   "devDependencies": {
-    "electron": "42.7.0",
+    "electron": "43.3.0",
     "electron-builder": "26.15.3",
     "playwright": "1.62.1",
     "vite": "^6.4.3"
