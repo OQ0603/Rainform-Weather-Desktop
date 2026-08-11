@@ -13,6 +13,7 @@ const packagedExecutable = process.env.RAINFORM_SMOKE_EXECUTABLE
   ? path.resolve(process.env.RAINFORM_SMOKE_EXECUTABLE)
   : '';
 let application;
+let page;
 
 try {
   application = await electron.launch({
@@ -27,7 +28,7 @@ try {
       ELECTRON_DISABLE_SECURITY_WARNINGS: 'true'
     }
   });
-  const page = await application.firstWindow();
+  page = await application.firstWindow();
   const consoleErrors = [];
   page.on('console', message => {
     if (message.type() === 'error') consoleErrors.push(message.text());
@@ -55,8 +56,14 @@ try {
   await page.waitForSelector('.city-search-result[data-city*="上海"]', { timeout: 20_000 });
   const candidateCount = await page.locator('.city-search-result').count();
   assert.ok(candidateCount > 0);
+  const citySyncSequence = (await page.evaluate(() => window.__rainformWeatherDebug.getState())).syncSequence;
   await page.locator('.city-search-result[data-city*="上海"]').first().click();
-  await page.waitForFunction(() => window.__rainformWeatherDebug?.getState().phase === 'success' && /上海/.test(window.__rainformWeatherDebug.getState().city), null, { timeout: 30_000 });
+  await page.waitForFunction(previousSequence => {
+    const current = window.__rainformWeatherDebug?.getState();
+    return current?.phase === 'success'
+      && current.completedSyncSequence > previousSequence
+      && /上海/.test(current.city);
+  }, citySyncSequence, { timeout: 30_000 });
   record('Shanghai city search and immediate switch', `${candidateCount} candidates`);
   await page.screenshot({ path: path.join(resultDirectory, 'desktop-auto-panel.png') });
 
@@ -117,7 +124,9 @@ try {
 
   await page.locator('#rainfall-mode-auto').click();
   assert.equal((await page.evaluate(() => window.__rainformWeatherDebug.getState())).mode, 'auto');
-  await page.locator('#rainfall-editor-close').click();
+  // The close handler immediately starts the panel exit transition; dispatch the
+  // semantic click directly so Playwright does not retry after the button hides.
+  await page.locator('#rainfall-editor-close').evaluate(button => button.click());
   await page.locator('#weather-status').waitFor({ state: 'visible' });
   assert.equal(await page.locator('#rainfall-editor').getAttribute('aria-hidden'), 'true');
   record('manual to automatic switch and editor-independent status');
@@ -162,11 +171,18 @@ try {
   }, null, 2));
   console.log(`Electron desktop smoke passed (${checks.length} checks).`);
 } catch (error) {
+  const diagnostics = await page?.evaluate(() => ({
+    weather: window.__rainformWeatherDebug?.getState?.() || null,
+    status: document.querySelector('#weather-status-text')?.textContent || '',
+    editorStatus: document.querySelector('#weather-editor-status')?.textContent || '',
+    webglStatus: document.querySelector('#scene-root')?.dataset.webglStatus || ''
+  })).catch(() => null);
   await writeFile(path.join(resultDirectory, 'desktop-smoke.json'), JSON.stringify({
     status: 'failed',
     startedAt,
     finishedAt: new Date().toISOString(),
     checks,
+    diagnostics,
     error: error instanceof Error ? error.stack : String(error)
   }, null, 2));
   throw error;

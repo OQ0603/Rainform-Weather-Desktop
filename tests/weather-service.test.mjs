@@ -63,6 +63,82 @@ test('Moji hourly values are normalized without exposing credentials', () => {
   assert.equal(timeline[24].label, '24:00');
 });
 
+test('Moji severe-rain condition drives the current visual even when hourly qpf is light', async () => {
+  const requests = [];
+  const fetchImpl = async (url, init = {}) => {
+    const href = String(url);
+    requests.push({ href, init });
+    if (href.endsWith('/condition')) {
+      return jsonResponse({
+        code: 0,
+        data: {
+          city: { name: '上海市', pname: '上海市', ianatimezone: 'Asia/Shanghai' },
+          condition: {
+            condition: '大暴雨',
+            conditionId: '56',
+            temp: '26',
+            humidity: '88',
+            updatetime: '2026-08-01 14:10:00'
+          }
+        },
+        msg: 'success'
+      });
+    }
+    if (href.endsWith('/forecast24hours')) {
+      return jsonResponse({
+        code: 0,
+        data: {
+          hourly: [
+            { date: '2026-08-01', hour: '14', qpf: '0.2', temp: '26', condition: '小雨', conditionId: '51' },
+            { date: '2026-08-02', hour: '0', qpf: '0', temp: '25', condition: '阴', conditionId: '13' }
+          ]
+        },
+        msg: 'success'
+      });
+    }
+    throw new Error(`Unexpected URL ${href}`);
+  };
+
+  const weather = await fetchWeather({
+    latitude: 31.2304,
+    longitude: 121.4737,
+    city: '上海',
+    source: 'search'
+  }, {
+    fetchImpl,
+    mojiAppCode: 'test-appcode-secret',
+    mojiConditionToken: 'test-condition-secret',
+    mojiForecastToken: 'test-forecast-secret'
+  });
+
+  assert.equal(weather.provider, 'moji');
+  assert.equal(weather.current.weatherText, '大暴雨');
+  assert.equal(weather.current.precipitation, 0, 'do not invent a measured mm/h value');
+  assert.equal(weather.current.visualPrecipitation, 50);
+  assert.equal(weather.current.precipitationEstimated, true);
+  assert.equal(weather.rainfall[14], 50, 'current Moji condition must override a light hourly qpf visually');
+  assert.equal(weather.rainfall[24], 0);
+
+  assert.equal(requests.length, 2);
+  assert.ok(requests.every(request => request.init.method === 'POST'));
+  assert.ok(requests.every(request => request.init.headers.Authorization === 'APPCODE test-appcode-secret'));
+  assert.equal(requests[0].init.body.get('lat'), '31.23040000');
+  assert.equal(requests[0].init.body.get('lon'), '121.47370000');
+  assert.equal(requests[0].init.body.get('token'), 'test-condition-secret');
+  assert.equal(requests[1].init.body.get('token'), 'test-forecast-secret');
+  assert.doesNotMatch(JSON.stringify(weather), /test-(?:appcode|condition|forecast)-secret/);
+});
+
+test('Moji condition severity follows official rain levels', () => {
+  assert.equal(weatherInternals.mojiRainFloor('毛毛细雨', 0), 0.5);
+  assert.equal(weatherInternals.mojiRainFloor('小雨', 51), 1);
+  assert.equal(weatherInternals.mojiRainFloor('大雨', 54), 10);
+  assert.equal(weatherInternals.mojiRainFloor('暴雨', 55), 25);
+  assert.equal(weatherInternals.mojiRainFloor('大暴雨', 56), 50);
+  assert.equal(weatherInternals.mojiRainFloor('特大暴雨', 57), 80);
+  assert.equal(weatherInternals.mojiRainFloor('阴', 13), 0);
+});
+
 test('weather falls back to Open-Meteo and reverse resolves the city', async () => {
   const fetchImpl = async url => {
     const href = String(url);

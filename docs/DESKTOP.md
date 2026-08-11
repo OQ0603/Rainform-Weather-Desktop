@@ -4,16 +4,19 @@ This derivative keeps the original Rainform Three.js/WebGL renderer and adds a W
 
 ## Weather providers
 
-- The Electron main process reads `MOJI_WEATHER_TOKEN` and `MOJI_WEATHER_PASSWORD` from the launch environment and attempts the Moji adapter first.
+- The Electron main process uses the Alibaba Cloud Marketplace Moji professional latitude/longitude API. It reads `MOJI_WEATHER_APPCODE`, `MOJI_WEATHER_CONDITION_TOKEN`, and `MOJI_WEATHER_FORECAST_TOKEN` from the launch environment and attempts Moji first.
+- `MOJI_WEATHER_PASSWORD` remains a compatibility alias for APPCode, while `MOJI_WEATHER_TOKEN` is a compatibility shared endpoint token.
 - If credentials are absent or Moji fails, the main process automatically requests Open-Meteo.
+- If Moji current conditions succeed but its hourly token/request fails, Moji remains the current-condition source and only the hourly timeline is filled by Open-Meteo.
 - Open-Meteo also supplies city-name search. Coordinate-to-city display uses a no-key reverse-geocoding fallback because Open-Meteo's public geocoding endpoint accepts place names, not coordinate pairs.
 - Provider credentials are never exposed through the preload bridge or included in the renderer bundle.
 
 Example for a development launch in PowerShell:
 
 ```powershell
-$env:MOJI_WEATHER_TOKEN='your-token'
-$env:MOJI_WEATHER_PASSWORD='your-password'
+$env:MOJI_WEATHER_APPCODE='your-appcode'
+$env:MOJI_WEATHER_CONDITION_TOKEN='your-condition-token'
+$env:MOJI_WEATHER_FORECAST_TOKEN='your-forecast24hours-token'
 pnpm run build
 pnpm start
 ```

@@ -16,9 +16,9 @@ An unofficial, noncommercial Windows desktop derivative that drives the original
 
 前往 [最新版本 Release](https://github.com/OQ0603/Rainform-Weather-Desktop/releases/latest)：
 
-- `Rainform-Weather-Desktop-2.1.0-x64.exe`：Windows x64 NSIS 安装包，可选择安装目录，并创建桌面及开始菜单快捷方式。
-- `Rainform-Weather-Desktop-2.1.0-x64-portable.zip`：解压后直接运行的便携版。
-- `Rainform-Weather-Desktop-2.1.0-Test-Results.md`：构建、在线天气、真实定位及桌面冒烟测试记录。
+- `Rainform-Weather-Desktop-2.1.1-x64.exe`：Windows x64 NSIS 安装包，可选择安装目录，并创建桌面及开始菜单快捷方式。
+- `Rainform-Weather-Desktop-2.1.1-x64-portable.zip`：解压后直接运行的便携版。
+- `Rainform-Weather-Desktop-2.1.1-Test-Results.md`：构建、在线天气、墨迹契约及桌面冒烟测试记录。
 
 当前安装包未购买商业代码签名证书，Windows SmartScreen 可能显示“未知发布者”。请从本仓库 Release 下载并核对 Release 中公布的 SHA256。
 
@@ -36,15 +36,18 @@ An unofficial, noncommercial Windows desktop derivative that drives the original
 
 ## 天气凭据
 
-墨迹天气凭据只由 Electron 主进程读取，不会通过 preload 暴露给渲染层：
+软件使用阿里云云市场“墨迹天气（专业版经纬度）”接口。APPCode 与各接口 token 只由 Electron 主进程读取，不会通过 preload 暴露给渲染层：
 
 ```powershell
-$env:MOJI_WEATHER_TOKEN='your-token'
-$env:MOJI_WEATHER_PASSWORD='your-password'
+$env:MOJI_WEATHER_APPCODE='your-appcode'
+$env:MOJI_WEATHER_CONDITION_TOKEN='your-condition-token'
+$env:MOJI_WEATHER_FORECAST_TOKEN='your-forecast24hours-token'
 pnpm start
 ```
 
-不要把真实凭据写入 `.env.example`、源码、GitHub Actions 或安装包。没有墨迹凭据时软件会自动使用 Open-Meteo。
+旧环境变量仍兼容：`MOJI_WEATHER_PASSWORD` 作为 APPCode，`MOJI_WEATHER_TOKEN` 作为共享接口 token。墨迹不同接口通常使用不同 token，推荐使用上面的三个明确变量。
+
+不要把真实凭据写入 `.env.example`、源码、GitHub Actions 或安装包。没有墨迹凭据时软件会明确显示 Open-Meteo；墨迹实况成功而逐小时接口不可用时，会保留墨迹实况并仅用 Open-Meteo 补全逐小时数据。
 
 ## 本地开发
 
@@ -84,13 +87,15 @@ docs/                      # 桌面构建和原项目文档
 
 ## 验证摘要
 
-2.1.0 发布前完成了以下实际验证：
+2.1.1 发布前完成了以下实际验证：
 
-- 项目检查、9 项单元/界面契约测试和 Vite 生产构建通过。
+- 项目检查、11 项单元/界面契约测试和 Vite 生产构建通过。
+- 墨迹官方 APPCode/POST 经纬度请求契约通过模拟响应验证；大暴雨实况会覆盖当前小时的轻量 qpf 以驱动暴雨画面，但不会伪造实测 mm/h。
 - Open-Meteo 在线天气及“上海”城市搜索通过。
 - 已打包 EXE 的 13 项桌面冒烟测试通过。
-- 未注入测试坐标的 Windows 系统定位成功。
+- 未注入测试坐标的打包后 Windows 系统定位成功，识别为濮阳市并完成天气同步。
 - 无雨时所有降雨粒子和声音增益为 0；小雨和大雨密度差异通过断言。
+- 旧效果控制台、齿轮按钮和旧本地调参读取已从源码删除。
 - NSIS 安装包和便携 ZIP 的归档完整性检查通过。
 
 完整证据随 GitHub Release 一同提供。
