@@ -43,8 +43,8 @@ const weatherServiceSource = await readFile('electron/weather-service.mjs', 'utf
 const viteSource = await readFile('vite.config.js', 'utf8');
 const html = await readFile('index.html', 'utf8');
 
-if (!mainSource.includes('const ENABLE_TUNING_CONSOLE = import.meta.env.DEV;')) {
-  throw new Error('The visual tuning console must remain development-only.');
+if (/tuning-(?:toggle|panel)|效果控制台|rf-tuning/.test(mainSource)) {
+  throw new Error('The retired visual tuning console must not remain in the desktop source.');
 }
 if (!viteSource.includes('sourcemap: false')) {
   throw new Error('Production source maps must remain disabled.');
@@ -58,7 +58,7 @@ if (!bootstrapSource.includes('Required Notice: Rainform / 数据成雨')) {
 if (!html.includes('PolyForm Noncommercial 1.0.0')) {
   throw new Error('index.html is missing the source license notice.');
 }
-if (/MOJI_WEATHER_(?:TOKEN|PASSWORD)|process\.env/.test(weatherControllerSource)) {
+if (/MOJI_WEATHER_|process\.env/.test(weatherControllerSource)) {
   throw new Error('Moji credentials must never be referenced by renderer code.');
 }
 if (!weatherServiceSource.includes('process.env.MOJI_WEATHER_TOKEN')) {

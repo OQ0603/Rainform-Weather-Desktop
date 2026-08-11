@@ -18,6 +18,7 @@ test('toolbar has exactly the editor and sound controls', () => {
   assert.match(toolbar, /id="rainfall-editor-toggle"/);
   assert.match(toolbar, /id="rain-sound-toggle"/);
   assert.doesNotMatch(toolbar, /relocate|定位/);
+  assert.doesNotMatch(main, /tuning-(?:toggle|panel)|效果控制台|rf-tuning/);
 });
 
 test('weather status is independent and duplicate rainfall readouts are absent', () => {
@@ -28,6 +29,8 @@ test('weather status is independent and duplicate rainfall readouts are absent',
   assert.doesNotMatch(html, /rainfall-chart-readout/);
   assert.match(html, /id="weather-selection-text"/);
   assert.match(controller, /if \(raw === '当前位置'\) return raw/);
+  assert.match(controller, /visualPrecipitation/);
+  assert.match(controller, /正在\$\{condition\.includes\('雨'\)/);
 });
 
 test('dry data rebuilds zero rain systems and forces sound gain to zero', () => {
@@ -48,7 +51,7 @@ test('desktop security and NSIS install choices are configured', () => {
 });
 
 test('renderer uses IPC and never reads Moji environment secrets', () => {
-  assert.doesNotMatch(controller, /MOJI_WEATHER_(?:TOKEN|PASSWORD)|process\.env/);
+  assert.doesNotMatch(controller, /MOJI_WEATHER_|process\.env/);
   assert.match(controller, /desktop\.fetchWeather/);
   assert.match(html, /connect-src 'none'/);
 });

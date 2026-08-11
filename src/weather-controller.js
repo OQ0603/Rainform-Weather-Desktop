@@ -31,6 +31,8 @@ const state = {
   weather: null,
   error: '',
   statusHidden: false,
+  syncSequence: 0,
+  completedSyncSequence: 0,
   searchSequence: 0,
   searchTimer: null,
   selected: null
@@ -79,9 +81,14 @@ function renderSelection() {
 function weatherStatusText(weather) {
   const city = displayCity(weather);
   const currentRain = Number(weather.current?.precipitation) || 0;
+  const visualRain = Number(weather.current?.visualPrecipitation ?? currentRain) || 0;
+  const estimated = Boolean(weather.current?.precipitationEstimated);
   const dayHasRain = weather.rainfall.some(value => Number(value) > 0);
   const condition = weather.current?.weatherText || '实时天气';
   const temperature = Math.round(Number(weather.current?.temperature) || 0);
+  if (visualRain > 0 && estimated) {
+    return `${city} · 正在${condition.includes('雨') ? condition : '降雨'} · ${temperature}°C`;
+  }
   if (currentRain > 0) {
     return `${city} · 正在降雨 ${formatRainfall(currentRain)} mm/h · ${condition} ${temperature}°C`;
   }
@@ -89,6 +96,16 @@ function weatherStatusText(weather) {
     return `${city} · 当前无雨，今日有降雨预报 · ${condition} ${temperature}°C`;
   }
   return `${city} · 暂无降雨 · ${condition} ${temperature}°C`;
+}
+
+function providerLabel(weather) {
+  if (weather.provider !== 'moji') {
+    return weather.fallback?.reason?.includes('未配置')
+      ? 'Open-Meteo（墨迹未配置）'
+      : 'Open-Meteo（墨迹请求失败）';
+  }
+  if (weather.forecastProvider === 'open-meteo') return '墨迹天气实况 + Open-Meteo逐小时';
+  return '墨迹天气';
 }
 
 function renderStatus() {
@@ -164,6 +181,7 @@ async function systemPosition() {
 }
 
 async function syncWeather(request, loadingMessage) {
+  const syncSequence = ++state.syncSequence;
   setMode('auto', { reapply: false });
   setPhase('loading');
   elements.statusText.textContent = loadingMessage;
@@ -173,21 +191,35 @@ async function syncWeather(request, loadingMessage) {
   try {
     const response = await desktop.fetchWeather(request);
     if (!response?.ok) throw new Error(response?.error || '天气服务暂时不可用。');
+    if (syncSequence !== state.syncSequence) return null;
     state.weather = response.weather;
-    rainform.applyRainfallData(response.weather.rainfall, 'auto');
+    if (state.mode === 'auto') rainform.applyRainfallData(response.weather.rainfall, 'auto');
     setPhase('success');
     elements.root.dataset.weatherProvider = response.weather.provider;
     elements.root.dataset.weatherCity = displayCity(response.weather);
     elements.root.dataset.currentPrecipitation = String(response.weather.current.precipitation);
+    elements.root.dataset.currentVisualPrecipitation = String(
+      response.weather.current.visualPrecipitation ?? response.weather.current.precipitation
+    );
     elements.editorLocation.textContent = displayCity(response.weather);
-    elements.editorSummary.textContent = `${response.weather.current.weatherText} · ${Math.round(response.weather.current.temperature)}°C · ${response.weather.provider === 'moji' ? '墨迹天气' : 'Open-Meteo'}`;
-    const fallbackText = response.weather.fallback ? '，墨迹不可用，已自动回退 Open-Meteo' : '';
-    setEditorStatus(`同步成功${fallbackText} · ${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`, 'success');
+    elements.editorSummary.textContent = `${response.weather.current.weatherText} · ${Math.round(response.weather.current.temperature)}°C · ${providerLabel(response.weather)}`;
+    const fallbackText = response.weather.fallback
+      ? response.weather.fallback.reason.includes('未配置')
+        ? '，墨迹未配置，当前使用 Open-Meteo'
+        : '，墨迹请求失败，已自动回退 Open-Meteo'
+      : '';
+    const forecastFallbackText = response.weather.forecastFallback
+      ? '，墨迹实况成功，逐小时预报已用 Open-Meteo 补全'
+      : '';
+    setEditorStatus(`同步成功${fallbackText}${forecastFallbackText} · ${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`, 'success');
+    state.completedSyncSequence = syncSequence;
     renderStatus();
     showStatus();
     return response.weather;
   } catch (error) {
+    if (syncSequence !== state.syncSequence) return null;
     state.error = `天气同步失败 · ${error instanceof Error ? error.message : '请稍后重试'} · 可使用手动模式`;
+    state.completedSyncSequence = syncSequence;
     setPhase('error');
     elements.statusText.textContent = state.error;
     setEditorStatus(state.error, 'error');
@@ -315,6 +347,8 @@ window.__rainformWeatherDebug = Object.freeze({
     city: state.weather ? displayCity(state.weather) : '',
     provider: state.weather?.provider || '',
     statusHidden: state.statusHidden,
+    syncSequence: state.syncSequence,
+    completedSyncSequence: state.completedSyncSequence,
     rainfall: rainform.getRainfallData()
   }),
   locateAndSync,
