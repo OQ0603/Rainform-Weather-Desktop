@@ -219,6 +219,7 @@ const defaultRainfall = Object.freeze([
 // built-in curve so an older browser value cannot override the current demo.
 let activeRainfall = [...defaultRainfall];
 let rainfallMax = Math.max(...activeRainfall);
+let liveRainfall = null;
 let axisMax = 12.8;
 let peakWaterfallRanges = [];
 let rainCeilingValue = axisMax;
@@ -278,6 +279,9 @@ const RAIN_SOUND_VOLUME_SCALE = 4.8;
 const RAIN_SOUND_MAX_GAIN = 1.8;
 
 function rainSoundStrength() {
+  if (liveRainfall !== null) {
+    return clamp(liveRainfall / VISUAL_RAINFALL_REFERENCE, 0, 1);
+  }
   if (rainfallMax <= 0) return 0;
   const mean = activeRainfall.reduce((sum, value) => sum + value, 0) / activeRainfall.length;
   const meanStrength = clamp(mean / VISUAL_RAINFALL_REFERENCE, 0, 1);
@@ -1040,11 +1044,14 @@ window.addEventListener('blur', onInteractionInterrupted);
 
 initRainfallEditor();
 window.rainform = Object.freeze({
-  applyRainfallData: (values, source = 'manual') => applyRainfallData(values, source),
+  applyRainfallData: (values, source = 'manual', currentRainfall = null) =>
+    applyRainfallData(values, source, currentRainfall),
+  setLiveRainfall: value => setLiveRainfall(value),
   getRainfallData: () => [...activeRainfall],
   getDebugState: () => ({
     rainfall: [...activeRainfall],
     rainfallMax,
+    liveRainfall,
     dry: rainfallMax <= 0,
     chainCount: rainChains.data.count,
     pearlCount: rainChains.data.pearlCount,
@@ -1184,7 +1191,19 @@ function syncDryState() {
   }
 }
 
-function applyRainfallData(values, source = 'manual') {
+function setLiveRainfall(value = null) {
+  if (value === null || value === undefined) {
+    liveRainfall = null;
+  } else {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number < 0) throw new TypeError(i18n('dataValueError'));
+    liveRainfall = normalizeRainfallValue(number);
+  }
+  root.dataset.liveRainfall = liveRainfall === null ? 'manual' : String(liveRainfall);
+  updateRainSoundFromData();
+}
+
+function applyRainfallData(values, source = 'manual', currentRainfall = null) {
   if (!Array.isArray(values) || values.length !== defaultRainfall.length) {
     throw new TypeError(i18n('dataLengthError', { count: defaultRainfall.length }));
   }
@@ -1197,6 +1216,13 @@ function applyRainfallData(values, source = 'manual') {
   });
 
   activeRainfall = nextValues;
+  if (source === 'auto') {
+    const current = Number(currentRainfall);
+    liveRainfall = Number.isFinite(current) && current >= 0 ? normalizeRainfallValue(current) : null;
+  } else {
+    liveRainfall = null;
+  }
+  root.dataset.liveRainfall = liveRainfall === null ? 'manual' : String(liveRainfall);
   refreshRainfallMetrics();
   rebuildRainfallSystems();
   updateRainSoundFromData();
@@ -1204,7 +1230,7 @@ function applyRainfallData(values, source = 'manual') {
   state.readoutKey = '';
   updateDomState(true);
   window.dispatchEvent(new CustomEvent('rainform:rainfall-applied', {
-    detail: { source, values: [...activeRainfall], maximum: rainfallMax, dry: rainfallMax <= 0 }
+    detail: { source, values: [...activeRainfall], maximum: rainfallMax, liveRainfall, dry: rainfallMax <= 0 }
   }));
 }
 

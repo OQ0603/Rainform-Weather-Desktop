@@ -48,6 +48,13 @@ test('dry data rebuilds zero rain systems and forces sound gain to zero', () => 
   assert.match(main, /rainfallDryState\.hidden = !dry/);
 });
 
+test('automatic rain audio follows current observed rainfall instead of the full-day curve', () => {
+  assert.match(main, /if \(liveRainfall !== null\)/);
+  assert.match(main, /liveRainfall \/ VISUAL_RAINFALL_REFERENCE/);
+  assert.match(controller, /response\.weather\.current\.precipitation/);
+  assert.match(controller, /rainform\.setLiveRainfall\(null\)/);
+});
+
 test('desktop security and NSIS install choices are configured', () => {
   assert.match(electronMain, /contextIsolation: true/);
   assert.match(electronMain, /nodeIntegration: false/);
@@ -76,8 +83,20 @@ test('automatic mode shows the full day and separates past, current and future h
   assert.match(controller, /中国气象局趋势 · Open-Meteo小时刻度/);
   assert.match(controller, /selectedForecast\?\.precipitationEstimated/);
   assert.match(controller, /rain\.textContent = period === 'future' && item\.precipitationEstimated/);
+  assert.match(controller, /中国天气网 · 整点实况 \+ 分时预报/);
+  assert.match(controller, /item\.forecastSource === 'weather-china'/);
+  assert.match(controller, /Number\(item\.hour\) > Number\(weather\.currentHour\)/);
   assert.match(styles, /\.weather-hourly-row/);
   assert.match(styles, /\.weather-hourly-row\.is-current/);
+});
+
+test('automatic weather has immediate refresh and a 5 minute timer without relocating', () => {
+  assert.match(html, /id="weather-refresh"[^>]*>立即刷新<\/button>/);
+  assert.match(html, /每5分钟自动刷新；立即刷新不会重新定位/);
+  assert.match(controller, /AUTO_REFRESH_INTERVAL_MS = 5 \* 60 \* 1000/);
+  assert.match(controller, /elements\.refresh\.addEventListener\('click', \(\) => refreshWeather\(\)\)/);
+  assert.match(controller, /if \(!state\.lastRequest\) return locateAndSync\(\)/);
+  assert.match(controller, /refreshWeather\(\{ automatic: true \}\)/);
 });
 
 test('a packaged executable has a non-injected Windows location smoke command', () => {

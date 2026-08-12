@@ -160,9 +160,13 @@
                   <span class="weather-editor-card__eyebrow">当前位置</span>
                   <strong id="weather-editor-location">等待定位</strong>
                 </div>
-                <button id="weather-relocate" class="weather-action-button" type="button">重新定位并同步</button>
+                <div class="weather-editor-card__actions">
+                  <button id="weather-refresh" class="weather-action-button is-primary" type="button">立即刷新</button>
+                  <button id="weather-relocate" class="weather-action-button" type="button">重新定位</button>
+                </div>
               </div>
               <p id="weather-editor-summary" class="weather-editor-card__summary">首次启动会请求 Windows 定位权限。</p>
+              <p class="weather-auto-refresh-note">每5分钟自动刷新；立即刷新不会重新定位。</p>
             </div>
 
             <section class="weather-hourly" aria-labelledby="weather-hourly-title">

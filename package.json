@@ -1,6 +1,6 @@
 {
   "name": "rainform",
-  "version": "2.1.5",
+  "version": "2.1.6",
   "private": true,
   "description": "A Windows desktop weather app that drives the original Rainform Three.js landscape with real city precipitation.",
   "license": "PolyForm-Noncommercial-1.0.0",
@@ -30,7 +30,7 @@
     "start": "electron .",
     "test": "node --test tests/weather-service.test.mjs tests/ui-contract.test.mjs",
     "test:integration": "node --test tests/weather-live.integration.mjs",
-    "test:cma-live": "node scripts/cma-live-smoke.mjs",
+    "test:weather-china-live": "node scripts/weather-china-live-smoke.mjs",
     "test:system-location": "node scripts/system-location-smoke.mjs",
     "test:desktop": "node scripts/electron-smoke.mjs",
     "check:project": "node scripts/check-project.mjs",

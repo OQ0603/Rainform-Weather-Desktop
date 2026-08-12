@@ -2,6 +2,7 @@
 // credentials never enter this module or the packaged renderer bundle.
 const desktop = window.rainformDesktop;
 const rainform = window.rainform;
+const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 const elements = {
   dashboard: document.querySelector('.rainfall-dashboard'),
@@ -16,6 +17,7 @@ const elements = {
   manualTab: document.querySelector('#rainfall-mode-manual'),
   autoPanel: document.querySelector('#rainfall-auto-panel'),
   manualPanel: document.querySelector('#rainfall-manual-panel'),
+  refresh: document.querySelector('#weather-refresh'),
   relocate: document.querySelector('#weather-relocate'),
   editorLocation: document.querySelector('#weather-editor-location'),
   editorSummary: document.querySelector('#weather-editor-summary'),
@@ -37,6 +39,10 @@ const state = {
   completedSyncSequence: 0,
   searchSequence: 0,
   searchTimer: null,
+  refreshTimer: null,
+  lastRequest: null,
+  nextAutoRefreshAt: 0,
+  locationSequence: 0,
   selected: null
 };
 
@@ -77,7 +83,9 @@ function renderSelection() {
     ? state.weather?.hourly?.find(item => Number(item.hour) === Number(selected.hour))
     : null;
   const rainText = selectedForecast?.precipitationEstimated
-    ? `${selectedForecast.weatherText}趋势（气象局）`
+    ? selectedForecast.forecastSource === 'weather-china'
+      ? `${selectedForecast.weatherText}趋势（中国天气网预报）`
+      : `${selectedForecast.weatherText}趋势（气象局）`
     : selected.value > 0
       ? `${formatRainfall(selected.value)} mm/h`
       : '暂无降雨';
@@ -90,7 +98,9 @@ function weatherStatusText(weather) {
   const currentRain = Number(weather.current?.precipitation) || 0;
   const visualRain = Number(weather.current?.visualPrecipitation ?? currentRain) || 0;
   const estimated = Boolean(weather.current?.precipitationEstimated);
-  const dayHasRain = weather.rainfall.some(value => Number(value) > 0);
+  const futureHasRain = (weather.hourly || []).some(item =>
+    Number(item.hour) > Number(weather.currentHour) && Number(item.precipitation) > 0
+  );
   const condition = weather.current?.weatherText || '实时天气';
   const temperature = Math.round(Number(weather.current?.temperature) || 0);
   const alertText = weather.alert?.label ? ` · ${weather.alert.label}` : '';
@@ -100,13 +110,15 @@ function weatherStatusText(weather) {
   if (visualRain > 0 && estimated) {
     return `${city} · 正在${condition.includes('雨') ? condition : '降雨'} · ${temperature}°C${alertText}`;
   }
-  if (dayHasRain) {
-    return `${city} · 当前无雨，今日有降雨预报 · ${condition} ${temperature}°C${alertText}`;
+  if (futureHasRain) {
+    return `${city} · 暂无降雨 · ${temperature}°C · 后续有降雨预报${alertText}`;
   }
-  return `${city} · 暂无降雨 · ${condition} ${temperature}°C${alertText}`;
+  const conditionText = condition === '暂无降雨' ? '' : ` · ${condition}`;
+  return `${city} · 暂无降雨${conditionText} ${temperature}°C${alertText}`;
 }
 
 function providerLabel(weather) {
+  if (weather.provider === 'weather-china') return '中国天气网实况 + 分时预报';
   if (weather.provider === 'cma') {
     return weather.forecastProvider === 'cma-trend+open-meteo'
       ? '中国气象局实况 + 气象局日夜趋势'
@@ -124,6 +136,7 @@ function sourceUpdateLabel(weather) {
 }
 
 function hourlySourceLabel(weather) {
+  if (weather?.forecastProvider === 'weather-china') return '中国天气网 · 整点实况 + 分时预报';
   if (weather?.forecastProvider === 'moji') return '墨迹天气逐小时预报';
   if (weather?.forecastProvider === 'cma-trend+open-meteo') return '中国气象局趋势 · Open-Meteo小时刻度';
   if (weather?.forecastProvider === 'open-meteo') return 'Open-Meteo 逐小时预报';
@@ -172,7 +185,9 @@ function renderHourlyForecast(weather, phase = 'success', message = '') {
     periodLabel.textContent = period === 'past' ? '较早' : period === 'current' ? '实况' : '未来';
     const condition = document.createElement('strong');
     condition.textContent = period === 'current'
-      ? weather.current?.weatherText || item.weatherText || '实时天气'
+      ? weather.provider === 'weather-china'
+        ? '整点实况'
+        : weather.current?.weatherText || item.weatherText || '实时天气'
       : item.weatherText || '天气';
     const rain = document.createElement('span');
     const amount = period === 'current'
@@ -180,7 +195,7 @@ function renderHourlyForecast(weather, phase = 'success', message = '') {
       : Number(item.precipitation) || 0;
     rain.className = amount > 0 ? 'has-rain' : '';
     rain.textContent = period === 'future' && item.precipitationEstimated
-      ? '气象局趋势'
+      ? item.forecastSource === 'weather-china' ? '中国天气网预报' : '气象局趋势'
       : amount > 0
         ? `${formatRainfall(amount)} mm/h`
         : '无雨';
@@ -249,7 +264,9 @@ function setMode(mode, { reapply = true } = {}) {
   elements.editor.dataset.mode = state.mode;
   elements.root.dataset.rainfallMode = state.mode;
   if (automatic && reapply && state.weather) {
-    rainform.applyRainfallData(state.weather.rainfall, 'auto');
+    rainform.applyRainfallData(state.weather.rainfall, 'auto', state.weather.current.precipitation);
+  } else if (!automatic) {
+    rainform.setLiveRainfall(null);
   }
   renderStatus();
   showStatus();
@@ -279,21 +296,59 @@ async function systemPosition() {
   });
 }
 
-async function syncWeather(request, loadingMessage) {
+function setSyncControlsDisabled(disabled) {
+  elements.refresh.disabled = disabled;
+  elements.relocate.disabled = disabled;
+}
+
+function cancelAutoRefresh() {
+  if (state.refreshTimer !== null) window.clearTimeout(state.refreshTimer);
+  state.refreshTimer = null;
+  state.nextAutoRefreshAt = 0;
+}
+
+function scheduleAutoRefresh() {
+  cancelAutoRefresh();
+  if (!state.lastRequest || !desktop?.isDesktop) return;
+  state.nextAutoRefreshAt = Date.now() + AUTO_REFRESH_INTERVAL_MS;
+  state.refreshTimer = window.setTimeout(() => {
+    state.refreshTimer = null;
+    refreshWeather({ automatic: true });
+  }, AUTO_REFRESH_INTERVAL_MS);
+}
+
+async function refreshWeather({ automatic = false } = {}) {
+  if (!state.lastRequest) return locateAndSync();
+  return await syncWeather(
+    { ...state.lastRequest },
+    automatic ? '正在自动刷新当前城市天气…' : '正在立即刷新当前城市天气…',
+    { preserveMode: automatic }
+  );
+}
+
+async function syncWeather(request, loadingMessage, { preserveMode = false } = {}) {
+  cancelAutoRefresh();
   const syncSequence = ++state.syncSequence;
-  setMode('auto', { reapply: false });
+  if (!preserveMode) setMode('auto', { reapply: false });
   setPhase('loading');
   elements.statusText.textContent = loadingMessage;
   setEditorStatus(loadingMessage, 'loading');
   renderHourlyForecast(null, 'loading');
-  elements.relocate.disabled = true;
+  setSyncControlsDisabled(true);
   state.error = '';
   try {
     const response = await desktop.fetchWeather(request);
     if (!response?.ok) throw new Error(response?.error || '天气服务暂时不可用。');
     if (syncSequence !== state.syncSequence) return null;
     state.weather = response.weather;
-    if (state.mode === 'auto') rainform.applyRainfallData(response.weather.rainfall, 'auto');
+    state.lastRequest = { ...request };
+    if (state.mode === 'auto') {
+      rainform.applyRainfallData(
+        response.weather.rainfall,
+        'auto',
+        response.weather.current.precipitation
+      );
+    }
     setPhase('success');
     elements.root.dataset.weatherProvider = response.weather.provider;
     elements.root.dataset.weatherCity = displayCity(response.weather);
@@ -308,7 +363,9 @@ async function syncWeather(request, loadingMessage) {
     elements.editorSummary.textContent = `${response.weather.current.weatherText} · ${Math.round(response.weather.current.temperature)}°C · ${providerLabel(response.weather)}`;
     renderHourlyForecast(response.weather);
     const stationText = response.weather.station
-      ? ` · ${response.weather.station.name}站 ${response.weather.station.distanceKm.toFixed(1)} km`
+      ? response.weather.provider === 'weather-china'
+        ? ` · ${response.weather.station.name} ${response.weather.station.id}`
+        : ` · ${response.weather.station.name}站 ${response.weather.station.distanceKm.toFixed(1)} km`
       : '';
     const alertText = response.weather.alert?.label ? ` · ${response.weather.alert.label}` : '';
     const forecastFallbackText = response.weather.forecastFallback
@@ -333,17 +390,22 @@ async function syncWeather(request, loadingMessage) {
     showStatus();
     return null;
   } finally {
-    elements.relocate.disabled = false;
+    if (syncSequence === state.syncSequence) {
+      setSyncControlsDisabled(false);
+      scheduleAutoRefresh();
+    }
   }
 }
 
 async function locateAndSync() {
+  cancelAutoRefresh();
+  state.locationSequence += 1;
   setMode('auto', { reapply: false });
   setPhase('loading');
   elements.statusText.textContent = '正在请求系统定位…';
   setEditorStatus('正在请求 Windows 定位权限…', 'loading');
   renderHourlyForecast(null, 'loading', '定位后显示后续逐小时天气…');
-  elements.relocate.disabled = true;
+  setSyncControlsDisabled(true);
   try {
     const position = await systemPosition();
     return await syncWeather({
@@ -362,7 +424,8 @@ async function locateAndSync() {
     showStatus();
     return null;
   } finally {
-    elements.relocate.disabled = false;
+    setSyncControlsDisabled(false);
+    scheduleAutoRefresh();
   }
 }
 
@@ -420,6 +483,7 @@ async function search(query) {
 
 elements.autoTab.addEventListener('click', () => setMode('auto'));
 elements.manualTab.addEventListener('click', () => setMode('manual'));
+elements.refresh.addEventListener('click', () => refreshWeather());
 elements.relocate.addEventListener('click', locateAndSync);
 elements.statusClose.addEventListener('click', hideStatus);
 elements.toolbar.addEventListener('pointerenter', showStatus);
@@ -449,6 +513,10 @@ window.addEventListener('rainform:rainfall-applied', event => {
   }
 });
 
+window.addEventListener('beforeunload', () => {
+  cancelAutoRefresh();
+});
+
 window.__rainformWeatherDebug = Object.freeze({
   getState: () => ({
     mode: state.mode,
@@ -456,15 +524,20 @@ window.__rainformWeatherDebug = Object.freeze({
     city: state.weather ? displayCity(state.weather) : '',
     provider: state.weather?.provider || '',
     forecastProvider: state.weather?.forecastProvider || '',
+    sourceUrl: state.weather?.sourceUrl || '',
     station: state.weather?.station || null,
     alert: state.weather?.alert || null,
     current: state.weather?.current || null,
     statusHidden: state.statusHidden,
     syncSequence: state.syncSequence,
     completedSyncSequence: state.completedSyncSequence,
+    locationSequence: state.locationSequence,
+    autoRefreshIntervalMs: AUTO_REFRESH_INTERVAL_MS,
+    nextAutoRefreshAt: state.nextAutoRefreshAt,
     rainfall: rainform.getRainfallData()
   }),
   locateAndSync,
+  refreshWeather,
   setMode
 });
 

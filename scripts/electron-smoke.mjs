@@ -39,9 +39,12 @@ try {
   await page.waitForSelector('#scene-root[data-webgl-status="ready"]', { timeout: 20_000 });
   const located = await page.evaluate(() => window.__rainformWeatherDebug.getState());
   assert.equal(located.mode, 'auto');
-  assert.ok(located.city.includes(smokeCity), `expected initial city to include ${smokeCity}`);
-  assert.equal(located.provider, 'cma');
-  assert.ok(located.station?.id, 'expected a CMA current-observation station');
+  assert.ok(
+    located.city.includes(smokeCity) || (smokeCity.includes('濮阳') && located.city.includes('华龙')),
+    `expected initial city to include ${smokeCity} or its China Weather district`
+  );
+  assert.equal(located.provider, 'weather-china');
+  assert.match(located.station?.id || '', /^\d{9}$/, 'expected a China Weather city code');
   assert.equal(located.rainfall.length, 25);
   record(
     'automatic geolocation and weather sync',
@@ -52,7 +55,7 @@ try {
   assert.ok(await page.locator('#weather-hourly-list .weather-hourly-row[data-period="past"]').count() > 0);
   assert.equal(await page.locator('#weather-hourly-list .weather-hourly-row[data-period="current"]').count(), 1);
   assert.ok(await page.locator('#weather-hourly-list .weather-hourly-row[data-period="future"]').count() > 0);
-  assert.match(await page.locator('#weather-hourly-source').textContent(), /中国气象局趋势/);
+  assert.match(await page.locator('#weather-hourly-source').textContent(), /中国天气网/);
   record('full-day list separates past, current and future hours', `${allDayWeather} total hours`);
   await page.screenshot({ path: path.join(resultDirectory, 'desktop-initial-weather.png') });
 
@@ -90,9 +93,26 @@ try {
   record('actual view drag temporarily hides and then restores chart labels');
 
   await page.locator('#rainfall-editor-toggle').click();
+  const beforeRefresh = await page.evaluate(() => window.__rainformWeatherDebug.getState());
+  assert.equal(beforeRefresh.autoRefreshIntervalMs, 300_000);
+  assert.ok(beforeRefresh.nextAutoRefreshAt > Date.now());
+  await page.locator('#weather-refresh').click();
+  await page.waitForFunction(previousSequence => {
+    const current = window.__rainformWeatherDebug?.getState();
+    return current?.phase === 'success' && current.completedSyncSequence > previousSequence;
+  }, beforeRefresh.completedSyncSequence, { timeout: 40_000 });
+  const afterRefresh = await page.evaluate(() => window.__rainformWeatherDebug.getState());
+  assert.equal(afterRefresh.locationSequence, beforeRefresh.locationSequence);
+  assert.ok(afterRefresh.nextAutoRefreshAt > Date.now());
+  record('immediate refresh reuses current location without geolocation');
+
+  const beforeRelocate = afterRefresh.locationSequence;
   await page.locator('#weather-relocate').click();
-  await page.waitForFunction(() => window.__rainformWeatherDebug?.getState().phase === 'success', null, { timeout: 30_000 });
-  record('relocate and sync button');
+  await page.waitForFunction(previousLocationSequence => {
+    const current = window.__rainformWeatherDebug?.getState();
+    return current?.phase === 'success' && current.locationSequence > previousLocationSequence;
+  }, beforeRelocate, { timeout: 40_000 });
+  record('relocate button requests location and syncs');
 
   await page.locator('#city-search-input').fill('上海');
   await page.waitForSelector('.city-search-result[data-city*="上海"]', { timeout: 20_000 });

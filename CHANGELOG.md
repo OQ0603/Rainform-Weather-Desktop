@@ -6,6 +6,15 @@ All notable Rainform releases are documented here.
 
 - Public source repository governance, validation and noncommercial licensing.
 
+## [2.1.6] - 2026-08-12
+
+- Made China Weather (`weather.com.cn`) the primary automatic timeline source, with Hualong/Puyang mapped to the requested `101181306` page.
+- Filled elapsed hours from the page's measured `observe24h_data.od26` precipitation instead of a forecast grid.
+- Filled future hours from the page's `hour3data` weather conditions and labelled those visual values as China Weather forecasts rather than measured mm/h.
+- Drove automatic-mode audio from the current measured hour, so past or forecast rain cannot play rain sound while the current website observation is dry.
+- Added a non-locating immediate refresh action and automatic refresh every five minutes; relocation remains a separate explicit action.
+- Retained Moji, CMA and Open-Meteo as failure fallbacks, while keeping provider requests in the Electron main process.
+
 ## [2.1.5] - 2026-08-12
 
 - Restored the full 00:00–24:00 list instead of hiding hours before the current observation.

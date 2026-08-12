@@ -7,9 +7,32 @@ const REVERSE_GEOCODING_URL = 'https://api.bigdatacloud.net/data/reverse-geocode
 const CMA_MAP_URL = 'https://weather.cma.cn/api/map/weather/1';
 const CMA_WEATHER_URL = 'https://weather.cma.cn/api/weather/view';
 const CMA_USER_AGENT = 'Rainform-Weather-Desktop/2.1 (+https://github.com/OQ0603/Rainform-Weather-Desktop)';
+const WEATHER_CHINA_SEARCH_URL = 'https://toy1.weather.com.cn/search';
+const WEATHER_CHINA_PAGE_URL = 'https://www.weather.com.cn/weather';
+const WEATHER_CHINA_REFERER = 'https://www.weather.com.cn/';
+const WEATHER_CHINA_USER_AGENT = CMA_USER_AGENT;
 const MOJI_API_BASE_URL = 'https://finaljwd.market.alicloudapi.com';
 const MOJI_CONDITION_PATH = '/whapi/json/aliweather/condition';
 const MOJI_FORECAST_PATH = '/whapi/json/aliweather/forecast24hours';
+
+const WEATHER_CHINA_LOCATION_OVERRIDES = Object.freeze([
+  Object.freeze({
+    code: '101181306',
+    name: '华龙',
+    region: '河南',
+    latitude: 35.778,
+    longitude: 115.074,
+    radiusKm: 35
+  }),
+  Object.freeze({
+    code: '101020100',
+    name: '上海',
+    region: '上海',
+    latitude: 31.2304,
+    longitude: 121.4737,
+    radiusKm: 80
+  })
+]);
 
 const WEATHER_CODE_TEXT = Object.freeze({
   0: '晴',
@@ -143,6 +166,41 @@ async function fetchJson(url, {
   }
 }
 
+async function fetchText(url, {
+  fetchImpl = fetch,
+  timeoutMs = 8000,
+  headers = {}
+} = {}) {
+  let response;
+  let lastNetworkError;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      response = await fetchImpl(url, {
+        method: 'GET',
+        headers: { Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9', ...headers },
+        signal: AbortSignal.timeout(timeoutMs)
+      });
+      if (response.ok || response.status < 500 || attempt === 1) break;
+    } catch (error) {
+      lastNetworkError = error;
+      if (attempt === 1) {
+        throw new WeatherServiceError('中国天气网连接失败或请求超时。', 'WEATHER_CHINA_NETWORK_ERROR', error);
+      }
+    }
+  }
+  if (!response) {
+    throw new WeatherServiceError('中国天气网连接失败或请求超时。', 'WEATHER_CHINA_NETWORK_ERROR', lastNetworkError);
+  }
+  if (!response.ok) {
+    throw new WeatherServiceError(`中国天气网返回 ${response.status}。`, 'WEATHER_CHINA_HTTP_ERROR');
+  }
+  try {
+    return await response.text();
+  } catch (error) {
+    throw new WeatherServiceError('中国天气网页面无法读取。', 'WEATHER_CHINA_INVALID_RESPONSE', error);
+  }
+}
+
 export async function searchCities(query, options = {}) {
   const normalized = String(query || '').trim().slice(0, 80);
   if (normalized.length < 2) return [];
@@ -190,13 +248,18 @@ export async function reverseGeocode(latitude, longitude, options = {}) {
       timeoutMs: options.timeoutMs ?? 5000
     });
     const locality = cleanLocationName(payload.city || payload.locality || payload.localityInfo?.administrative?.at(-1)?.name);
+    const administrative = Array.isArray(payload.localityInfo?.administrative)
+      ? payload.localityInfo.administrative
+      : [];
+    const district = cleanLocationName(payload.locality || administrative.at(-1)?.name);
     return {
       city: locality,
+      district,
       region: cleanLocationName(payload.principalSubdivision),
       country: cleanLocationName(payload.countryName)
     };
   } catch {
-    return { city: '', region: '', country: '' };
+    return { city: '', district: '', region: '', country: '' };
   }
 }
 
@@ -291,6 +354,300 @@ function haversineDistanceKm(latitudeA, longitudeA, latitudeB, longitudeB) {
     + Math.cos(radians(latitudeA)) * Math.cos(radians(latitudeB))
     * Math.sin(deltaLongitude / 2) ** 2;
   return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function normalizeWeatherChinaName(value) {
+  return cleanLocationName(value)
+    .replaceAll('華', '华')
+    .replaceAll('龍', '龙')
+    .replaceAll('臺', '台')
+    .replace(/(?:特别行政区|自治州|自治县|市|区|县)$/u, '');
+}
+
+function knownWeatherChinaLocation(latitude, longitude, query = '') {
+  const normalizedQuery = normalizeWeatherChinaName(query);
+  for (const location of WEATHER_CHINA_LOCATION_OVERRIDES) {
+    const distanceKm = haversineDistanceKm(
+      latitude,
+      longitude,
+      location.latitude,
+      location.longitude
+    );
+    if (distanceKm <= location.radiusKm || normalizeWeatherChinaName(location.name) === normalizedQuery) {
+      return { ...location, distanceKm: Math.round(distanceKm * 10) / 10 };
+    }
+  }
+  return null;
+}
+
+function parseWeatherChinaSearch(text) {
+  const source = String(text || '').trim();
+  const start = source.indexOf('[');
+  const end = source.lastIndexOf(']');
+  if (start < 0 || end <= start) {
+    throw new WeatherServiceError('中国天气网城市搜索结果无法读取。', 'WEATHER_CHINA_INVALID_RESPONSE');
+  }
+  let entries;
+  try {
+    entries = JSON.parse(source.slice(start, end + 1));
+  } catch (error) {
+    throw new WeatherServiceError('中国天气网城市搜索结果无法读取。', 'WEATHER_CHINA_INVALID_RESPONSE', error);
+  }
+  return (Array.isArray(entries) ? entries : [])
+    .map(entry => String(entry?.ref || '').split('~'))
+    .filter(parts => /^\d{9}$/.test(parts[0] || ''))
+    .map(parts => ({
+      code: parts[0],
+      name: cleanLocationName(parts[2]),
+      parent: cleanLocationName(parts[4]),
+      region: cleanLocationName(parts[9])
+    }))
+    .filter(location => location.code && location.name);
+}
+
+async function resolveWeatherChinaLocation(latitude, longitude, query, options = {}) {
+  const known = knownWeatherChinaLocation(latitude, longitude, query);
+  if (known) return known;
+  const normalizedQuery = normalizeWeatherChinaName(query);
+  if (!normalizedQuery) {
+    throw new WeatherServiceError('无法确定中国天气网城市代码。', 'WEATHER_CHINA_LOCATION_ERROR');
+  }
+  const params = new URLSearchParams({ cityname: normalizedQuery });
+  const responseText = await fetchText(`${WEATHER_CHINA_SEARCH_URL}?${params}`, {
+    ...options,
+    timeoutMs: options.timeoutMs ?? 8000,
+    headers: {
+      ...options.headers,
+      Referer: WEATHER_CHINA_REFERER,
+      'User-Agent': WEATHER_CHINA_USER_AGENT
+    }
+  });
+  const locations = parseWeatherChinaSearch(responseText);
+  const exact = locations.find(location => normalizeWeatherChinaName(location.name) === normalizedQuery)
+    || locations.find(location => normalizeWeatherChinaName(location.parent) === normalizedQuery);
+  const location = exact || locations[0];
+  if (!location) {
+    throw new WeatherServiceError('中国天气网没有找到匹配城市。', 'WEATHER_CHINA_LOCATION_ERROR');
+  }
+  return { ...location, distanceKm: null };
+}
+
+function extractWeatherChinaAssignment(html, variableName) {
+  const source = String(html || '');
+  const marker = new RegExp(`var\\s+${variableName}\\s*=\\s*`);
+  const match = marker.exec(source);
+  if (!match) {
+    throw new WeatherServiceError(`中国天气网页面缺少 ${variableName}。`, 'WEATHER_CHINA_INVALID_RESPONSE');
+  }
+  const start = source.indexOf('{', match.index + match[0].length);
+  if (start < 0) {
+    throw new WeatherServiceError(`中国天气网页面缺少 ${variableName}。`, 'WEATHER_CHINA_INVALID_RESPONSE');
+  }
+  let depth = 0;
+  let quoted = false;
+  let escaped = false;
+  for (let index = start; index < source.length; index += 1) {
+    const character = source[index];
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === '"') quoted = false;
+      continue;
+    }
+    if (character === '"') {
+      quoted = true;
+      continue;
+    }
+    if (character === '{') depth += 1;
+    if (character === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        try {
+          return JSON.parse(source.slice(start, index + 1));
+        } catch (error) {
+          throw new WeatherServiceError(`中国天气网 ${variableName} 无法解析。`, 'WEATHER_CHINA_INVALID_RESPONSE', error);
+        }
+      }
+    }
+  }
+  throw new WeatherServiceError(`中国天气网 ${variableName} 数据不完整。`, 'WEATHER_CHINA_INVALID_RESPONSE');
+}
+
+function parseWeatherChinaObservationTime(value) {
+  const match = String(value || '').match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})$/);
+  if (!match) {
+    throw new WeatherServiceError('中国天气网实况更新时间无效。', 'WEATHER_CHINA_INVALID_RESPONSE');
+  }
+  const [, yearText, monthText, dayText, hourText, minuteText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  return {
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    timestamp: Date.UTC(year, month - 1, day, hour, minute),
+    dateKey: `${yearText}-${monthText}-${dayText}`,
+    updatedAt: `${yearText}-${monthText}-${dayText} ${hourText}:${minuteText}`
+  };
+}
+
+function utcDateKey(timestamp) {
+  const date = new Date(timestamp);
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+}
+
+function weatherChinaForecastTimestamp(observationTime, day, hour) {
+  let timestamp = Date.UTC(observationTime.year, observationTime.month - 1, day, hour);
+  if (timestamp < observationTime.timestamp - 12 * 60 * 60 * 1000) {
+    timestamp = Date.UTC(observationTime.year, observationTime.month, day, hour);
+  }
+  return timestamp;
+}
+
+function parseWeatherChinaForecast(hour3data, observationTime) {
+  const source = Array.isArray(hour3data?.['1d']) ? hour3data['1d'] : [];
+  return source
+    .map(value => {
+      const fields = String(value || '').split(',');
+      const timeMatch = fields[0]?.match(/(\d{1,2})日(\d{2})时/);
+      if (!timeMatch) return null;
+      const day = Number(timeMatch[1]);
+      const hour = Number(timeMatch[2]);
+      return {
+        timestamp: weatherChinaForecastTimestamp(observationTime, day, hour),
+        label: fields[0],
+        hour,
+        icon: String(fields[1] || ''),
+        weatherText: String(fields[2] || '天气预报'),
+        temperature: finiteNumber(String(fields[3] || '').replace('℃', ''), 0)
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.timestamp - right.timestamp);
+}
+
+function weatherChinaTimeline(observe24h, hour3data) {
+  const observation = observe24h?.od;
+  const observationTime = parseWeatherChinaObservationTime(observation?.od0);
+  const observations = Array.isArray(observation?.od2) ? observation.od2 : [];
+  if (!observations.length) {
+    throw new WeatherServiceError('中国天气网整点降水实况为空。', 'WEATHER_CHINA_INVALID_RESPONSE');
+  }
+  const currentObservation = observations[0];
+  const currentHour = observationTime.hour;
+  const dayStart = Date.UTC(observationTime.year, observationTime.month - 1, observationTime.day);
+  const currentTemperature = finiteNumber(currentObservation?.od22);
+  const forecast = parseWeatherChinaForecast(hour3data, observationTime);
+  const timeline = Array.from({ length: 25 }, (_, hour) => ({
+    hour,
+    label: `${String(hour).padStart(2, '0')}:00`,
+    time: `${observationTime.dateKey}T${String(hour % 24).padStart(2, '0')}:00+08:00`,
+    precipitation: 0,
+    temperature: currentTemperature,
+    weatherCode: 0,
+    weatherText: '无雨',
+    observationSource: 'weather-china'
+  }));
+
+  observations.forEach((item, index) => {
+    const timestamp = observationTime.timestamp - index * 60 * 60 * 1000;
+    if (utcDateKey(timestamp) !== observationTime.dateKey) return;
+    const hour = new Date(timestamp).getUTCHours();
+    const amount = precipitation(item?.od26);
+    timeline[hour] = {
+      ...timeline[hour],
+      time: `${observationTime.dateKey}T${String(hour).padStart(2, '0')}:00+08:00`,
+      precipitation: amount,
+      temperature: finiteNumber(item?.od22, currentTemperature),
+      weatherText: amount > 0 ? '实测降雨' : '无雨',
+      humidity: Math.round(finiteNumber(item?.od27)),
+      observationSource: 'weather-china',
+      precipitationEstimated: false
+    };
+  });
+
+  for (let hour = currentHour + 1; hour <= 24; hour += 1) {
+    const targetTimestamp = dayStart + hour * 60 * 60 * 1000;
+    const forecastPoint = forecast.find(item => item.timestamp >= targetTimestamp) || forecast.at(-1);
+    if (!forecastPoint) continue;
+    timeline[hour] = {
+      ...timeline[hour],
+      time: new Date(targetTimestamp).toISOString(),
+      precipitation: precipitation(rainConditionFloor(forecastPoint.weatherText)),
+      temperature: forecastPoint.temperature || currentTemperature,
+      weatherText: forecastPoint.weatherText,
+      precipitationEstimated: true,
+      forecastSource: 'weather-china',
+      sourceForecastTime: forecastPoint.label
+    };
+  }
+
+  timeline[currentHour].weatherText = timeline[currentHour].precipitation > 0 ? '正在降雨' : '暂无降雨';
+  return { timeline, forecast, observationTime, currentObservation };
+}
+
+async function fetchWeatherChina(latitude, longitude, query, options = {}) {
+  const location = options.weatherChinaCode
+    ? {
+        code: String(options.weatherChinaCode),
+        name: cleanLocationName(options.weatherChinaName || query || '中国天气网城市'),
+        region: cleanLocationName(options.weatherChinaRegion || ''),
+        distanceKm: null
+      }
+    : await resolveWeatherChinaLocation(latitude, longitude, query, options);
+  const pageUrl = `${WEATHER_CHINA_PAGE_URL}/${encodeURIComponent(location.code)}.shtml`;
+  const html = await fetchText(`${pageUrl}?t=${Date.now()}`, {
+    ...options,
+    timeoutMs: options.timeoutMs ?? 10000,
+    headers: {
+      ...options.headers,
+      Referer: WEATHER_CHINA_REFERER,
+      'User-Agent': WEATHER_CHINA_USER_AGENT
+    }
+  });
+  const observe24h = extractWeatherChinaAssignment(html, 'observe24h_data');
+  const hour3data = extractWeatherChinaAssignment(html, 'hour3data');
+  const { timeline, forecast, observationTime, currentObservation } = weatherChinaTimeline(observe24h, hour3data);
+  const currentHour = observationTime.hour;
+  const measured = precipitation(currentObservation?.od26);
+  const currentWeatherText = measured > 0 ? '正在降雨' : '暂无降雨';
+  const distanceKm = location.distanceKm !== null && location.distanceKm !== undefined
+    && Number.isFinite(Number(location.distanceKm))
+    ? Number(location.distanceKm)
+    : null;
+
+  return {
+    provider: 'weather-china',
+    forecastProvider: 'weather-china',
+    city: location.code === '101181306' ? '华龙区' : cleanLocationName(location.name),
+    region: cleanLocationName(location.region),
+    country: '中国',
+    updatedAt: observationTime.updatedAt,
+    currentHour,
+    timezone: 'Asia/Shanghai',
+    station: {
+      id: location.code,
+      name: location.code === '101181306' ? '华龙' : cleanLocationName(location.name),
+      distanceKm
+    },
+    sourceUrl: pageUrl,
+    current: {
+      precipitation: measured,
+      visualPrecipitation: measured,
+      precipitationEstimated: false,
+      temperature: Math.round(finiteNumber(currentObservation?.od22)),
+      humidity: Math.round(finiteNumber(currentObservation?.od27)),
+      weatherCode: 0,
+      weatherText: currentWeatherText
+    },
+    hourly: timeline,
+    rainfall: timeline.map(item => item.precipitation)
+  };
 }
 
 function normalizeCmaStations(payload) {
@@ -682,15 +1039,33 @@ export async function fetchWeather(request, options = {}) {
   const { latitude, longitude } = validateCoordinates(request?.latitude, request?.longitude);
   const requestedCity = cleanLocationName(request?.city);
   const requestedRegion = cleanLocationName(request?.region);
+  const reverse = requestedCity
+    ? { city: '', district: '', region: '', country: '' }
+    : await reverseGeocode(latitude, longitude, options);
   let weather;
+  let weatherChinaFallbackReason = '';
   let mojiFallbackReason = '';
   let cmaFallbackReason = '';
-  try {
-    weather = await fetchMoji(latitude, longitude, options);
-  } catch (error) {
-    mojiFallbackReason = error instanceof Error ? error.message : '墨迹天气请求失败';
+  if (options.weatherChinaEnabled !== false) {
+    try {
+      weather = await fetchWeatherChina(
+        latitude,
+        longitude,
+        requestedCity || reverse.district || reverse.city,
+        options
+      );
+    } catch (error) {
+      weatherChinaFallbackReason = error instanceof Error ? error.message : '中国天气网请求失败';
+    }
   }
-  if (!weather && !mojiFallbackReason) mojiFallbackReason = '未配置墨迹天气凭据';
+  if (!weather) {
+    try {
+      weather = await fetchMoji(latitude, longitude, options);
+    } catch (error) {
+      mojiFallbackReason = error instanceof Error ? error.message : '墨迹天气请求失败';
+    }
+    if (!weather && !mojiFallbackReason) mojiFallbackReason = '未配置墨迹天气凭据';
+  }
   if (!weather) {
     try {
       weather = await fetchCma(latitude, longitude, options);
@@ -700,10 +1075,9 @@ export async function fetchWeather(request, options = {}) {
   }
   if (!weather) weather = await fetchOpenMeteo(latitude, longitude, options);
 
-  const reverse = requestedCity || weather.city
-    ? { city: '', region: '', country: '' }
-    : await reverseGeocode(latitude, longitude, options);
-  const city = requestedCity || cleanLocationName(weather.city) || reverse.city || '当前位置';
+  const city = weather.provider === 'weather-china'
+    ? cleanLocationName(weather.city) || requestedCity || reverse.city || '当前位置'
+    : requestedCity || cleanLocationName(weather.city) || reverse.city || '当前位置';
   const region = requestedRegion || cleanLocationName(weather.region) || reverse.region;
 
   return {
@@ -714,15 +1088,13 @@ export async function fetchWeather(request, options = {}) {
     latitude,
     longitude,
     locationSource: request?.source === 'search' ? 'search' : 'system',
-    fallback: weather.provider === 'cma'
-      ? { from: 'moji', to: 'cma', reason: mojiFallbackReason }
-      : weather.provider === 'open-meteo'
-        ? {
-            from: 'cma',
-            to: 'open-meteo',
-            reason: cmaFallbackReason || mojiFallbackReason
-          }
-        : null
+    fallback: weather.provider === 'weather-china'
+      ? null
+      : {
+          from: 'weather-china',
+          to: weather.provider,
+          reason: weatherChinaFallbackReason || mojiFallbackReason || cmaFallbackReason
+        }
   };
 }
 
@@ -732,6 +1104,10 @@ export const weatherInternals = Object.freeze({
   normalizeCmaStations,
   nearestCmaStation,
   applyCmaRainTrend,
+  parseWeatherChinaSearch,
+  extractWeatherChinaAssignment,
+  parseWeatherChinaForecast,
+  weatherChinaTimeline,
   rainConditionFloor,
   mojiRainFloor,
   mojiCurrentRain,

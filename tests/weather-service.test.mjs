@@ -13,6 +13,21 @@ function jsonResponse(payload, status = 200) {
   });
 }
 
+function textResponse(payload, status = 200) {
+  return new Response(payload, {
+    status,
+    headers: { 'content-type': 'text/html; charset=UTF-8' }
+  });
+}
+
+function weatherChinaHtml() {
+  return `<!doctype html><html><body><script>
+var hour3data={"1d":["12日14时,d09,大雨,25℃,北风,<3级,3","12日17时,d08,中雨,24℃,北风,<3级,3","12日20时,n07,小雨,23℃,北风,<3级,0","12日23时,n02,阴,22℃,北风,<3级,0","13日02时,n02,阴,22℃,北风,<3级,0"]};
+</script><script>
+var observe24h_data={"od":{"od0":"202608121100","od1":"濮阳","od2":[{"od21":"11","od22":"23.3","od26":"1.8","od27":"92"},{"od21":"10","od22":"23.1","od26":"5.9","od27":"94"},{"od21":"09","od22":"23.3","od26":"7.3","od27":"95"},{"od21":"08","od22":"23.4","od26":"6.6","od27":"94"}]}};
+</script></body></html>`;
+}
+
 function openMeteoPayload() {
   const time = [];
   const precipitation = [];
@@ -52,6 +67,62 @@ test('Open-Meteo data becomes exactly 25 points from 00:00 through 24:00', () =>
   assert.equal(timeline[0].label, '00:00');
   assert.equal(timeline[24].label, '24:00');
   assert.equal(timeline[13].precipitation, 0.4, 'current rain must be represented visually');
+});
+
+test('China Weather timeline uses observed past rain and forecast conditions for future intensity', () => {
+  const html = weatherChinaHtml();
+  const observe = weatherInternals.extractWeatherChinaAssignment(html, 'observe24h_data');
+  const forecast = weatherInternals.extractWeatherChinaAssignment(html, 'hour3data');
+  const result = weatherInternals.weatherChinaTimeline(observe, forecast);
+  assert.equal(result.timeline.length, 25);
+  assert.equal(result.observationTime.hour, 11);
+  assert.equal(result.timeline[9].precipitation, 7.3);
+  assert.equal(result.timeline[10].precipitation, 5.9);
+  assert.equal(result.timeline[11].precipitation, 1.8);
+  assert.equal(result.timeline[11].precipitationEstimated, false);
+  assert.equal(result.timeline[11].weatherText, '正在降雨');
+  assert.equal(result.timeline[12].weatherText, '大雨');
+  assert.equal(result.timeline[12].precipitation, 10);
+  assert.equal(result.timeline[12].precipitationEstimated, true);
+  assert.equal(result.timeline[12].forecastSource, 'weather-china');
+  assert.equal(result.timeline[18].weatherText, '小雨');
+  assert.equal(result.timeline[18].precipitation, 1);
+  assert.equal(result.timeline[24].weatherText, '阴');
+  assert.equal(result.timeline[24].precipitation, 0);
+});
+
+test('China Weather Hualong page is the primary source for Puyang coordinates', async () => {
+  const requests = [];
+  const fetchImpl = async url => {
+    const href = String(url);
+    requests.push(href);
+    if (href.startsWith('https://www.weather.com.cn/weather/101181306.shtml')) {
+      return textResponse(weatherChinaHtml());
+    }
+    throw new Error(`Unexpected URL ${href}`);
+  };
+  const weather = await fetchWeather({
+    latitude: 35.7619,
+    longitude: 115.0293,
+    city: '濮阳',
+    source: 'system'
+  }, {
+    fetchImpl,
+    weatherChinaEnabled: true,
+    mojiToken: '',
+    mojiPassword: ''
+  });
+  assert.equal(weather.provider, 'weather-china');
+  assert.equal(weather.forecastProvider, 'weather-china');
+  assert.equal(weather.city, '华龙区');
+  assert.equal(weather.station.id, '101181306');
+  assert.equal(weather.current.precipitation, 1.8);
+  assert.equal(weather.current.visualPrecipitation, 1.8);
+  assert.equal(weather.rainfall[10], 5.9);
+  assert.equal(weather.rainfall[12], 10);
+  assert.equal(weather.hourly[12].forecastSource, 'weather-china');
+  assert.equal(weather.sourceUrl, 'https://www.weather.com.cn/weather/101181306.shtml');
+  assert.equal(requests.length, 1);
 });
 
 test('Moji hourly values are normalized without exposing credentials', () => {
@@ -106,6 +177,7 @@ test('Moji severe-rain condition drives the current visual even when hourly qpf 
     source: 'search'
   }, {
     fetchImpl,
+    weatherChinaEnabled: false,
     mojiAppCode: 'test-appcode-secret',
     mojiConditionToken: 'test-condition-secret',
     mojiForecastToken: 'test-forecast-secret'
@@ -180,6 +252,7 @@ test('CMA nearest live station overrides a stale light-rain forecast during a ra
     source: 'system'
   }, {
     fetchImpl,
+    weatherChinaEnabled: false,
     mojiToken: '',
     mojiPassword: ''
   });
@@ -216,6 +289,7 @@ test('weather falls back to Open-Meteo and reverse resolves the city', async () 
   };
   const weather = await fetchWeather({ latitude: 31.2304, longitude: 121.4737 }, {
     fetchImpl,
+    weatherChinaEnabled: false,
     mojiToken: '',
     mojiPassword: ''
   });
