@@ -82,14 +82,31 @@ function renderSelection() {
   const selectedForecast = state.mode === 'auto'
     ? state.weather?.hourly?.find(item => Number(item.hour) === Number(selected.hour))
     : null;
-  const rainText = selectedForecast?.precipitationEstimated
+  const selectedHour = Number(selected.hour);
+  const currentHour = Number(state.weather?.currentHour);
+  const period = state.mode !== 'auto' || !Number.isInteger(currentHour)
+    ? 'manual'
+    : selectedHour < currentHour
+      ? 'past'
+      : selectedHour === currentHour
+        ? 'current'
+        : 'future';
+  const rainText = period === 'future' && selectedForecast?.precipitationEstimated
     ? selectedForecast.forecastSource === 'weather-china'
-      ? `${selectedForecast.weatherText}趋势（中国天气网预报）`
+      ? `${selectedForecast.weatherText}（中国天气网预报）`
       : `${selectedForecast.weatherText}趋势（气象局）`
     : selected.value > 0
       ? `${formatRainfall(selected.value)} mm/h`
       : '暂无降雨';
-  elements.selectionText.textContent = `预计 ${String(selected.hour).padStart(2, '0')}:00 · ${rainText}`;
+  const time = `${String(selected.hour).padStart(2, '0')}:00`;
+  const timeText = period === 'past'
+    ? `${time} 实况`
+    : period === 'current'
+      ? `${time} 当前`
+      : period === 'future'
+        ? `预计 ${time}`
+        : `已选 ${time}`;
+  elements.selectionText.textContent = `${timeText} · ${rainText}`;
   elements.selectionText.hidden = false;
 }
 
@@ -528,6 +545,7 @@ window.__rainformWeatherDebug = Object.freeze({
     station: state.weather?.station || null,
     alert: state.weather?.alert || null,
     current: state.weather?.current || null,
+    currentHour: state.weather?.currentHour ?? null,
     statusHidden: state.statusHidden,
     syncSequence: state.syncSequence,
     completedSyncSequence: state.completedSyncSequence,

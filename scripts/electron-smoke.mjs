@@ -127,6 +127,31 @@ try {
       && /上海/.test(current.city);
   }, citySyncSequence, { timeout: 30_000 });
   record('Shanghai city search and immediate switch', `${candidateCount} candidates`);
+
+  const automaticTimeline = await page.evaluate(() => window.__rainformWeatherDebug.getState());
+  const currentHour = Number(automaticTimeline.currentHour);
+  if (currentHour > 0) {
+    const pastHour = currentHour - 1;
+    await page.evaluate(({ hour, value }) => {
+      window.dispatchEvent(new CustomEvent('rainform:selection-change', {
+        detail: { hour, value, active: true }
+      }));
+    }, { hour: pastHour, value: automaticTimeline.rainfall[pastHour] });
+    const pastReadout = await page.locator('#weather-selection-text').textContent();
+    assert.match(pastReadout, new RegExp(`^${String(pastHour).padStart(2, '0')}:00 实况 · `));
+    assert.doesNotMatch(pastReadout, /^预计/);
+  }
+  if (currentHour < 24) {
+    const futureHour = currentHour + 1;
+    await page.evaluate(({ hour, value }) => {
+      window.dispatchEvent(new CustomEvent('rainform:selection-change', {
+        detail: { hour, value, active: true }
+      }));
+    }, { hour: futureHour, value: automaticTimeline.rainfall[futureHour] });
+    const futureReadout = await page.locator('#weather-selection-text').textContent();
+    assert.match(futureReadout, new RegExp(`^预计 ${String(futureHour).padStart(2, '0')}:00 · `));
+  }
+  record('selected readout labels past as observed and only future as expected');
   await page.screenshot({ path: path.join(resultDirectory, 'desktop-auto-panel.png') });
 
   await page.locator('#rainfall-mode-manual').click();

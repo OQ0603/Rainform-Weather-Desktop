@@ -82,6 +82,10 @@ test('automatic mode shows the full day and separates past, current and future h
   assert.match(controller, /Open-Meteo 逐小时预报/);
   assert.match(controller, /中国气象局趋势 · Open-Meteo小时刻度/);
   assert.match(controller, /selectedForecast\?\.precipitationEstimated/);
+  assert.match(controller, /period === 'past'[\s\S]*?`\$\{time\} 实况`/);
+  assert.match(controller, /period === 'current'[\s\S]*?`\$\{time\} 当前`/);
+  assert.match(controller, /period === 'future'[\s\S]*?`预计 \$\{time\}`/);
+  assert.match(controller, /period === 'future' && selectedForecast\?\.precipitationEstimated/);
   assert.match(controller, /rain\.textContent = period === 'future' && item\.precipitationEstimated/);
   assert.match(controller, /中国天气网 · 整点实况 \+ 分时预报/);
   assert.match(controller, /item\.forecastSource === 'weather-china'/);

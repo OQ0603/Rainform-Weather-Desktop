@@ -6,6 +6,12 @@ All notable Rainform releases are documented here.
 
 - Public source repository governance, validation and noncommercial licensing.
 
+## [2.1.7] - 2026-08-12
+
+- Changed the selected-hour status wording so elapsed automatic hours are labelled as observations, the present hour as current, and only later hours as expected forecasts.
+- Changed manual selections to an explicit selected-hour label instead of forecast wording.
+- Added a desktop regression check covering past and future selected-hour labels.
+
 ## [2.1.6] - 2026-08-12
 
 - Made China Weather (`weather.com.cn`) the primary automatic timeline source, with Hualong/Puyang mapped to the requested `101181306` page.

@@ -10,6 +10,7 @@ This derivative keeps the original Rainform Three.js/WebGL renderer and adds a W
 - Elapsed hours come from the page's `observe24h_data.od26` measured precipitation. Future hours come from its `hour3data` conditions and are explicitly marked as forecast-derived visual intensity.
 - In automatic mode, rain audio uses only the current measured observation; elapsed or forecast rain does not produce sound while the current hour is dry.
 - The automatic panel refreshes the current location every five minutes. Its immediate refresh reuses the saved request; only the separate relocate action asks Windows for location again.
+- The selected-hour status calls elapsed automatic hours observations, the present hour current, and only later hours expected; manual selections are labelled selected rather than expected.
 - If China Weather fails, the main process falls back through configured Moji, the nearest CMA observation, and Open-Meteo.
 - If Moji current conditions succeed but its hourly token/request fails, Moji remains the current-condition source and only the hourly timeline is filled by Open-Meteo.
 - Open-Meteo also supplies city-name search. Coordinate-to-city display uses a no-key reverse-geocoding fallback because Open-Meteo's public geocoding endpoint accepts place names, not coordinate pairs.
@@ -53,4 +54,4 @@ $env:RAINFORM_SYSTEM_LOCATION_EXECUTABLE='D:\path\to\Rainform Weather Desktop.ex
 pnpm run test:system-location
 ```
 
-The dedicated China Weather live smoke uses a Puyang coordinate, verifies code `101181306`, records measured past rain and the future forecast list, and rejects mixed Open-Meteo/CMA labels. The full desktop smoke exercises China Weather synchronization and city search, dry/light/heavy renderer state, audio mute/restore, component independence, and a 900x500 landscape layout.
+The dedicated China Weather live smoke uses a Puyang coordinate, verifies code `101181306`, records measured past rain and the future forecast list, and rejects mixed Open-Meteo/CMA labels. The full desktop smoke also distinguishes observed selected hours from expected future hours, and exercises China Weather synchronization and city search, dry/light/heavy renderer state, audio mute/restore, component independence, and a 900x500 landscape layout.
