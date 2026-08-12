@@ -11,6 +11,7 @@ test-results/
 .cache/
 .coverage/
 .video-work/
+work/
 exports/
 .private-backups/
 .claude/

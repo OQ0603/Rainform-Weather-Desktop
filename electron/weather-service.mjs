@@ -4,6 +4,9 @@
 const OPEN_METEO_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 const OPEN_METEO_GEOCODING_URL = 'https://geocoding-api.open-meteo.com/v1/search';
 const REVERSE_GEOCODING_URL = 'https://api.bigdatacloud.net/data/reverse-geocode-client';
+const CMA_MAP_URL = 'https://weather.cma.cn/api/map/weather/1';
+const CMA_WEATHER_URL = 'https://weather.cma.cn/api/weather/view';
+const CMA_USER_AGENT = 'Rainform-Weather-Desktop/2.1 (+https://github.com/OQ0603/Rainform-Weather-Desktop)';
 const MOJI_API_BASE_URL = 'https://finaljwd.market.alicloudapi.com';
 const MOJI_CONDITION_PATH = '/whapi/json/aliweather/condition';
 const MOJI_FORECAST_PATH = '/whapi/json/aliweather/forecast24hours';
@@ -54,6 +57,41 @@ function finiteNumber(value, fallback = 0) {
 
 function precipitation(value) {
   return Math.max(0, Math.round(finiteNumber(value) * 10) / 10);
+}
+
+function rainConditionFloor(conditionText, conditionId) {
+  const text = String(conditionText || '');
+  const id = Number(conditionId);
+  const textFloors = [
+    ['特大暴雨', 80],
+    ['大暴雨', 50],
+    ['大到暴雨', 25],
+    ['暴雨', 25],
+    ['强阵雨', 15],
+    ['中到大雨', 8],
+    ['大雨', 10],
+    ['雷阵雨', 6],
+    ['中雨', 4],
+    ['小到中雨', 2],
+    ['阵雨', 2],
+    ['小雨', 1],
+    ['毛毛', 0.5],
+    ['细雨', 0.5],
+    ['雨', 2]
+  ];
+  const byText = textFloors.find(([label]) => text.includes(label));
+  if (byText) return byText[1];
+
+  if (id === 57) return 80;
+  if ([56, 69, 70].includes(id)) return 50;
+  if ([55, 93].includes(id)) return 25;
+  if (id === 23) return 15;
+  if ([54, 68, 92].includes(id)) return 10;
+  if ([37, 38, 39, 40, 41, 44, 45, 87, 88, 89, 90].includes(id)) return 6;
+  if ([53, 67].includes(id)) return 4;
+  if ([15, 16, 17, 18, 19, 20, 21, 22, 78, 86].includes(id)) return 2;
+  if ([51, 52, 66, 91].includes(id)) return 1;
+  return 0;
 }
 
 function cleanLocationName(value) {
@@ -172,13 +210,18 @@ function openMeteoTimeline(payload) {
   const hourly = [];
   for (let hour = 0; hour <= 24; hour += 1) {
     const index = startIndex + hour;
+    const weatherCode = finiteNumber(
+      payload.hourly?.weather_code?.[index],
+      finiteNumber(payload.current?.weather_code)
+    );
     hourly.push({
       hour,
       label: `${String(hour).padStart(2, '0')}:00`,
       time: times[index] || '',
       precipitation: precipitation(payload.hourly?.precipitation?.[index]),
       temperature: finiteNumber(payload.hourly?.temperature_2m?.[index], finiteNumber(payload.current?.temperature_2m)),
-      weatherCode: finiteNumber(payload.hourly?.weather_code?.[index], finiteNumber(payload.current?.weather_code))
+      weatherCode,
+      weatherText: WEATHER_CODE_TEXT[weatherCode] || '天气'
     });
   }
   const currentHour = Number(currentTime.slice(11, 13));
@@ -209,9 +252,11 @@ async function fetchOpenMeteo(latitude, longitude, options = {}) {
   }
   const weatherCode = finiteNumber(payload.current.weather_code);
   const hourly = openMeteoTimeline(payload);
+  const currentHour = Number(String(payload.current.time || '').slice(11, 13));
   return {
     provider: 'open-meteo',
-    updatedAt: new Date().toISOString(),
+    updatedAt: String(payload.current.time || new Date().toISOString()),
+    currentHour: Number.isInteger(currentHour) ? currentHour : new Date().getHours(),
     timezone: payload.timezone || '',
     current: {
       precipitation: precipitation(Math.max(
@@ -235,39 +280,190 @@ async function fetchOpenMeteo(latitude, longitude, options = {}) {
   };
 }
 
-function mojiRainFloor(conditionText, conditionId) {
-  const text = String(conditionText || '');
-  const id = Number(conditionId);
-  const textFloors = [
-    ['特大暴雨', 80],
-    ['大暴雨', 50],
-    ['大到暴雨', 25],
-    ['暴雨', 25],
-    ['强阵雨', 15],
-    ['中到大雨', 8],
-    ['大雨', 10],
-    ['雷阵雨', 6],
-    ['中雨', 4],
-    ['小到中雨', 2],
-    ['阵雨', 2],
-    ['小雨', 1],
-    ['毛毛', 0.5],
-    ['细雨', 0.5],
-    ['雨', 2]
-  ];
-  const byText = textFloors.find(([label]) => text.includes(label));
-  if (byText) return byText[1];
+let cmaStationCache = null;
 
-  if (id === 57) return 80;
-  if ([56, 69, 70].includes(id)) return 50;
-  if ([55, 93].includes(id)) return 25;
-  if (id === 23) return 15;
-  if ([54, 68, 92].includes(id)) return 10;
-  if ([37, 38, 39, 40, 41, 44, 45, 87, 88, 89, 90].includes(id)) return 6;
-  if ([53, 67].includes(id)) return 4;
-  if ([15, 16, 17, 18, 19, 20, 21, 22, 78, 86].includes(id)) return 2;
-  if ([51, 52, 66, 91].includes(id)) return 1;
-  return 0;
+function haversineDistanceKm(latitudeA, longitudeA, latitudeB, longitudeB) {
+  const radians = value => value * Math.PI / 180;
+  const earthRadiusKm = 6371;
+  const deltaLatitude = radians(latitudeB - latitudeA);
+  const deltaLongitude = radians(longitudeB - longitudeA);
+  const a = Math.sin(deltaLatitude / 2) ** 2
+    + Math.cos(radians(latitudeA)) * Math.cos(radians(latitudeB))
+    * Math.sin(deltaLongitude / 2) ** 2;
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function normalizeCmaStations(payload) {
+  if (Number(payload?.code) !== 0 || !Array.isArray(payload?.data?.city)) {
+    throw new WeatherServiceError('中国气象局站点数据不完整。', 'CMA_ERROR');
+  }
+  return payload.data.city
+    .map(item => ({
+      id: String(item?.[0] || ''),
+      city: cleanLocationName(item?.[1]),
+      latitude: Number(item?.[4]),
+      longitude: Number(item?.[5]),
+      dayText: String(item?.[7] || ''),
+      nightText: String(item?.[12] || ''),
+      regionCode: String(item?.[16] || ''),
+      adcode: String(item?.[17] || '')
+    }))
+    .filter(station => station.id && station.city
+      && Number.isFinite(station.latitude) && Number.isFinite(station.longitude));
+}
+
+async function fetchCmaStations(options = {}) {
+  const useSharedCache = !options.fetchImpl;
+  if (useSharedCache && cmaStationCache && Date.now() - cmaStationCache.createdAt < 15 * 60 * 1000) {
+    return cmaStationCache.stations;
+  }
+  const payload = await fetchJson(`${CMA_MAP_URL}?t=${Date.now()}`, {
+    ...options,
+    timeoutMs: options.timeoutMs ?? 8000,
+    headers: { ...options.headers, 'User-Agent': CMA_USER_AGENT }
+  });
+  const stations = normalizeCmaStations(payload);
+  if (useSharedCache) cmaStationCache = { createdAt: Date.now(), stations };
+  return stations;
+}
+
+function nearestCmaStation(stations, latitude, longitude) {
+  let nearest = null;
+  for (const station of stations) {
+    const distanceKm = haversineDistanceKm(
+      latitude,
+      longitude,
+      station.latitude,
+      station.longitude
+    );
+    if (!nearest || distanceKm < nearest.distanceKm) nearest = { ...station, distanceKm };
+  }
+  return nearest;
+}
+
+function cmaCurrentHour(lastUpdate) {
+  const match = String(lastUpdate || '').match(/\s(\d{1,2}):/);
+  if (match) return Number(match[1]);
+  return new Date().getHours();
+}
+
+function cmaAlert(alarms) {
+  const alarm = (Array.isArray(alarms) ? alarms : []).find(item =>
+    /暴雨|强降雨|雷雨|雷暴|雨/.test(`${item?.signaltype || ''}${item?.title || ''}`)
+  );
+  if (!alarm) return null;
+  const type = cleanLocationName(alarm.signaltype) || '降雨';
+  const level = cleanLocationName(alarm.signallevel);
+  return {
+    type,
+    level,
+    label: `${type}${level}预警`,
+    title: String(alarm.title || ''),
+    effective: String(alarm.effective || ''),
+    severity: String(alarm.severity || '')
+  };
+}
+
+function currentOnlyTimeline(currentHour, temperature, weatherText, visualPrecipitation) {
+  return Array.from({ length: 25 }, (_, hour) => ({
+    hour,
+    label: `${String(hour).padStart(2, '0')}:00`,
+    time: '',
+    precipitation: hour === currentHour ? visualPrecipitation : 0,
+    temperature,
+    weatherCode: 0,
+    weatherText
+  }));
+}
+
+async function fetchCma(latitude, longitude, options = {}) {
+  const stations = await fetchCmaStations(options);
+  const station = nearestCmaStation(stations, latitude, longitude);
+  if (!station || station.distanceKm > 180) {
+    throw new WeatherServiceError('当前位置没有可匹配的中国气象局实况站。', 'CMA_OUT_OF_RANGE');
+  }
+
+  const payload = await fetchJson(`${CMA_WEATHER_URL}?stationid=${encodeURIComponent(station.id)}&t=${Date.now()}`, {
+    ...options,
+    timeoutMs: options.timeoutMs ?? 8000,
+    headers: { ...options.headers, 'User-Agent': CMA_USER_AGENT }
+  });
+  if (Number(payload?.code) !== 0 || !payload?.data?.now) {
+    throw new WeatherServiceError(payload?.msg || '中国气象局实况暂时不可用。', 'CMA_ERROR');
+  }
+
+  const data = payload.data;
+  const now = data.now;
+  const currentHour = cmaCurrentHour(data.lastUpdate);
+  const today = Array.isArray(data.daily) ? data.daily[0] : null;
+  const daylight = currentHour >= 6 && currentHour < 18;
+  const weatherText = String(
+    (daylight ? today?.dayText : today?.nightText)
+    || station.dayText
+    || station.nightText
+    || '实时天气'
+  );
+  const alert = cmaAlert(data.alarm);
+  const measured = precipitation(now.precipitation);
+  const conditionFloor = measured > 0 ? rainConditionFloor(weatherText) : 0;
+  const alertFloor = measured > 0 && alert ? rainConditionFloor(alert.type || alert.title) : 0;
+  const visual = precipitation(Math.max(measured, conditionFloor, alertFloor));
+  const temperature = Math.round(finiteNumber(now.temperature));
+
+  let hourly;
+  let forecastProvider = 'open-meteo';
+  let forecastFallbackReason = '';
+  try {
+    hourly = (await fetchOpenMeteo(latitude, longitude, options)).hourly;
+  } catch (error) {
+    forecastProvider = 'cma-current-only';
+    forecastFallbackReason = error instanceof Error ? error.message : '逐小时预报请求失败';
+    hourly = currentOnlyTimeline(currentHour, temperature, weatherText, visual);
+  }
+  if (Number.isInteger(currentHour) && currentHour >= 0 && currentHour <= 23) {
+    hourly[currentHour].precipitation = precipitation(Math.max(
+      hourly[currentHour].precipitation,
+      visual
+    ));
+    hourly[currentHour].temperature = temperature;
+    hourly[currentHour].weatherText = weatherText;
+  }
+
+  const pathParts = String(data.location?.path || '').split(',').map(cleanLocationName).filter(Boolean);
+  return {
+    provider: 'cma',
+    forecastProvider,
+    city: cleanLocationName(data.location?.name || station.city),
+    region: pathParts.length >= 2 ? pathParts.at(-2) : '',
+    country: pathParts[0] || '中国',
+    updatedAt: String(data.lastUpdate || new Date().toISOString()),
+    currentHour,
+    timezone: 'Asia/Shanghai',
+    station: {
+      id: station.id,
+      name: cleanLocationName(data.location?.name || station.city),
+      distanceKm: Math.round(station.distanceKm * 10) / 10
+    },
+    alert,
+    current: {
+      precipitation: measured,
+      visualPrecipitation: visual,
+      precipitationEstimated: visual > measured,
+      temperature,
+      humidity: Math.round(finiteNumber(now.humidity)),
+      weatherCode: daylight ? finiteNumber(today?.dayCode) : finiteNumber(today?.nightCode),
+      weatherText
+    },
+    hourly,
+    rainfall: hourly.map(item => item.precipitation),
+    forecastFallback: forecastProvider === 'cma-current-only'
+      ? { from: 'open-meteo', reason: forecastFallbackReason }
+      : null
+  };
+}
+
+function mojiRainFloor(conditionText, conditionId) {
+  return rainConditionFloor(conditionText, conditionId);
 }
 
 function mojiCurrentRain(current) {
@@ -430,6 +626,7 @@ async function fetchMoji(latitude, longitude, options = {}) {
     city: cleanLocationName(city.name || city.pname),
     region: cleanLocationName(city.pname || city.secondaryname),
     updatedAt: current.updatetime || current.obs_time || new Date().toISOString(),
+    currentHour,
     timezone: city.ianatimezone || '',
     current: {
       precipitation: rain.measured,
@@ -454,12 +651,20 @@ export async function fetchWeather(request, options = {}) {
   const requestedRegion = cleanLocationName(request?.region);
   let weather;
   let mojiFallbackReason = '';
+  let cmaFallbackReason = '';
   try {
     weather = await fetchMoji(latitude, longitude, options);
   } catch (error) {
     mojiFallbackReason = error instanceof Error ? error.message : '墨迹天气请求失败';
   }
   if (!weather && !mojiFallbackReason) mojiFallbackReason = '未配置墨迹天气凭据';
+  if (!weather) {
+    try {
+      weather = await fetchCma(latitude, longitude, options);
+    } catch (error) {
+      cmaFallbackReason = error instanceof Error ? error.message : '中国气象局实况请求失败';
+    }
+  }
   if (!weather) weather = await fetchOpenMeteo(latitude, longitude, options);
 
   const reverse = requestedCity || weather.city
@@ -472,19 +677,28 @@ export async function fetchWeather(request, options = {}) {
     ...weather,
     city,
     region,
-    country: reverse.country,
+    country: weather.country || reverse.country,
     latitude,
     longitude,
     locationSource: request?.source === 'search' ? 'search' : 'system',
-    fallback: weather.provider === 'open-meteo' && Boolean(mojiFallbackReason)
-      ? { from: 'moji', reason: mojiFallbackReason }
-      : null
+    fallback: weather.provider === 'cma'
+      ? { from: 'moji', to: 'cma', reason: mojiFallbackReason }
+      : weather.provider === 'open-meteo'
+        ? {
+            from: 'cma',
+            to: 'open-meteo',
+            reason: cmaFallbackReason || mojiFallbackReason
+          }
+        : null
   };
 }
 
 export const weatherInternals = Object.freeze({
   openMeteoTimeline,
   normalizeMojiHourly,
+  normalizeCmaStations,
+  nearestCmaStation,
+  rainConditionFloor,
   mojiRainFloor,
   mojiCurrentRain,
   precipitation,

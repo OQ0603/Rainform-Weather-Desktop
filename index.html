@@ -165,6 +165,16 @@
               <p id="weather-editor-summary" class="weather-editor-card__summary">首次启动会请求 Windows 定位权限。</p>
             </div>
 
+            <section class="weather-hourly" aria-labelledby="weather-hourly-title">
+              <div class="weather-hourly__heading">
+                <strong id="weather-hourly-title">下一小时至 24:00</strong>
+                <span id="weather-hourly-source">等待监测同步</span>
+              </div>
+              <div id="weather-hourly-list" class="weather-hourly-list" role="list" aria-live="polite">
+                <p class="weather-hourly-empty">定位后显示后续逐小时天气</p>
+              </div>
+            </section>
+
             <div class="city-search">
               <label for="city-search-input">更改城市</label>
               <div class="city-search__field">

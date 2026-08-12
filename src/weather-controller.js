@@ -20,6 +20,8 @@ const elements = {
   editorLocation: document.querySelector('#weather-editor-location'),
   editorSummary: document.querySelector('#weather-editor-summary'),
   editorStatus: document.querySelector('#weather-editor-status'),
+  hourlySource: document.querySelector('#weather-hourly-source'),
+  hourlyList: document.querySelector('#weather-hourly-list'),
   searchInput: document.querySelector('#city-search-input'),
   searchResults: document.querySelector('#city-search-results'),
   searchSpinner: document.querySelector('#city-search-spinner')
@@ -86,26 +88,87 @@ function weatherStatusText(weather) {
   const dayHasRain = weather.rainfall.some(value => Number(value) > 0);
   const condition = weather.current?.weatherText || '实时天气';
   const temperature = Math.round(Number(weather.current?.temperature) || 0);
-  if (visualRain > 0 && estimated) {
-    return `${city} · 正在${condition.includes('雨') ? condition : '降雨'} · ${temperature}°C`;
-  }
+  const alertText = weather.alert?.label ? ` · ${weather.alert.label}` : '';
   if (currentRain > 0) {
-    return `${city} · 正在降雨 ${formatRainfall(currentRain)} mm/h · ${condition} ${temperature}°C`;
+    return `${city} · 正在降雨 ${formatRainfall(currentRain)} mm/h · ${condition} ${temperature}°C${alertText}`;
+  }
+  if (visualRain > 0 && estimated) {
+    return `${city} · 正在${condition.includes('雨') ? condition : '降雨'} · ${temperature}°C${alertText}`;
   }
   if (dayHasRain) {
-    return `${city} · 当前无雨，今日有降雨预报 · ${condition} ${temperature}°C`;
+    return `${city} · 当前无雨，今日有降雨预报 · ${condition} ${temperature}°C${alertText}`;
   }
-  return `${city} · 暂无降雨 · ${condition} ${temperature}°C`;
+  return `${city} · 暂无降雨 · ${condition} ${temperature}°C${alertText}`;
 }
 
 function providerLabel(weather) {
-  if (weather.provider !== 'moji') {
-    return weather.fallback?.reason?.includes('未配置')
-      ? 'Open-Meteo（墨迹未配置）'
-      : 'Open-Meteo（墨迹请求失败）';
+  if (weather.provider === 'cma') {
+    return weather.forecastProvider === 'open-meteo'
+      ? '中国气象局实况 + Open-Meteo逐小时'
+      : '中国气象局实况';
   }
+  if (weather.provider === 'open-meteo') return 'Open-Meteo（国内实况不可用）';
   if (weather.forecastProvider === 'open-meteo') return '墨迹天气实况 + Open-Meteo逐小时';
   return '墨迹天气';
+}
+
+function sourceUpdateLabel(weather) {
+  const raw = String(weather.updatedAt || '');
+  const match = raw.match(/(?:T|\s)(\d{1,2}:\d{2})/);
+  return match ? match[1] : new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+}
+
+function hourlySourceLabel(weather) {
+  if (weather?.forecastProvider === 'moji') return '墨迹天气逐小时预报';
+  if (weather?.forecastProvider === 'open-meteo') return 'Open-Meteo 逐小时预报';
+  return '后续预报暂不可用';
+}
+
+function renderHourlyForecast(weather, phase = 'success', message = '') {
+  elements.hourlyList.replaceChildren();
+  elements.hourlyList.dataset.state = phase;
+  if (phase !== 'success' || !weather || weather.forecastProvider === 'cma-current-only') {
+    elements.hourlySource.textContent = phase === 'loading' ? '正在同步' : '后续预报暂不可用';
+    const empty = document.createElement('p');
+    empty.className = 'weather-hourly-empty';
+    empty.textContent = message || (phase === 'loading' ? '正在获取后续逐小时天气…' : '当前实况仍可使用，可稍后重新同步');
+    elements.hourlyList.append(empty);
+    return;
+  }
+
+  const currentHour = Number.isInteger(Number(weather.currentHour))
+    ? Number(weather.currentHour)
+    : new Date().getHours();
+  const future = (Array.isArray(weather.hourly) ? weather.hourly : [])
+    .filter(item => Number(item.hour) > currentHour && Number(item.hour) <= 24);
+  elements.hourlySource.textContent = hourlySourceLabel(weather);
+  if (!future.length) {
+    const empty = document.createElement('p');
+    empty.className = 'weather-hourly-empty';
+    empty.textContent = '今天的逐小时预报已结束';
+    elements.hourlyList.append(empty);
+    return;
+  }
+
+  for (const item of future) {
+    const row = document.createElement('div');
+    row.className = 'weather-hourly-row';
+    row.setAttribute('role', 'listitem');
+
+    const time = document.createElement('time');
+    time.textContent = item.label || `${String(item.hour).padStart(2, '0')}:00`;
+    const condition = document.createElement('strong');
+    condition.textContent = item.weatherText || '天气';
+    const rain = document.createElement('span');
+    const amount = Number(item.precipitation) || 0;
+    rain.className = amount > 0 ? 'has-rain' : '';
+    rain.textContent = amount > 0 ? `${formatRainfall(amount)} mm/h` : '无雨';
+    const temperature = document.createElement('span');
+    temperature.textContent = `${Math.round(Number(item.temperature) || 0)}°C`;
+
+    row.append(time, condition, rain, temperature);
+    elements.hourlyList.append(row);
+  }
 }
 
 function renderStatus() {
@@ -186,6 +249,7 @@ async function syncWeather(request, loadingMessage) {
   setPhase('loading');
   elements.statusText.textContent = loadingMessage;
   setEditorStatus(loadingMessage, 'loading');
+  renderHourlyForecast(null, 'loading');
   elements.relocate.disabled = true;
   state.error = '';
   try {
@@ -201,17 +265,23 @@ async function syncWeather(request, loadingMessage) {
     elements.root.dataset.currentVisualPrecipitation = String(
       response.weather.current.visualPrecipitation ?? response.weather.current.precipitation
     );
+    elements.root.dataset.weatherForecastProvider = response.weather.forecastProvider || response.weather.provider;
+    elements.root.dataset.weatherStation = response.weather.station?.id || '';
+    elements.root.dataset.weatherAlert = response.weather.alert?.label || '';
     elements.editorLocation.textContent = displayCity(response.weather);
     elements.editorSummary.textContent = `${response.weather.current.weatherText} · ${Math.round(response.weather.current.temperature)}°C · ${providerLabel(response.weather)}`;
-    const fallbackText = response.weather.fallback
-      ? response.weather.fallback.reason.includes('未配置')
-        ? '，墨迹未配置，当前使用 Open-Meteo'
-        : '，墨迹请求失败，已自动回退 Open-Meteo'
+    renderHourlyForecast(response.weather);
+    const stationText = response.weather.station
+      ? ` · ${response.weather.station.name}站 ${response.weather.station.distanceKm.toFixed(1)} km`
       : '';
+    const alertText = response.weather.alert?.label ? ` · ${response.weather.alert.label}` : '';
     const forecastFallbackText = response.weather.forecastFallback
-      ? '，墨迹实况成功，逐小时预报已用 Open-Meteo 补全'
+      ? ' · 逐小时预报暂不可用，已保留当前实况'
       : '';
-    setEditorStatus(`同步成功${fallbackText}${forecastFallbackText} · ${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`, 'success');
+    setEditorStatus(
+      `同步成功 · ${providerLabel(response.weather)}${stationText}${alertText} · 实况 ${sourceUpdateLabel(response.weather)}${forecastFallbackText}`,
+      'success'
+    );
     state.completedSyncSequence = syncSequence;
     renderStatus();
     showStatus();
@@ -223,6 +293,7 @@ async function syncWeather(request, loadingMessage) {
     setPhase('error');
     elements.statusText.textContent = state.error;
     setEditorStatus(state.error, 'error');
+    renderHourlyForecast(null, 'error');
     showStatus();
     return null;
   } finally {
@@ -235,6 +306,7 @@ async function locateAndSync() {
   setPhase('loading');
   elements.statusText.textContent = '正在请求系统定位…';
   setEditorStatus('正在请求 Windows 定位权限…', 'loading');
+  renderHourlyForecast(null, 'loading', '定位后显示后续逐小时天气…');
   elements.relocate.disabled = true;
   try {
     const position = await systemPosition();
@@ -250,6 +322,7 @@ async function locateAndSync() {
     setPhase('error');
     elements.statusText.textContent = state.error;
     setEditorStatus(state.error, 'error');
+    renderHourlyForecast(null, 'error');
     showStatus();
     return null;
   } finally {
@@ -346,6 +419,10 @@ window.__rainformWeatherDebug = Object.freeze({
     phase: state.phase,
     city: state.weather ? displayCity(state.weather) : '',
     provider: state.weather?.provider || '',
+    forecastProvider: state.weather?.forecastProvider || '',
+    station: state.weather?.station || null,
+    alert: state.weather?.alert || null,
+    current: state.weather?.current || null,
     statusHidden: state.statusHidden,
     syncSequence: state.syncSequence,
     completedSyncSequence: state.completedSyncSequence,

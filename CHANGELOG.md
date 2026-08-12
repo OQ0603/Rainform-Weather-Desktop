@@ -6,6 +6,22 @@ All notable Rainform releases are documented here.
 
 - Public source repository governance, validation and noncommercial licensing.
 
+## [2.1.3] - 2026-08-12
+
+- Added nearest-station China Meteorological Administration current observations as the default no-credential source in mainland China.
+- Kept Open-Meteo only for the 00:00–24:00 hourly curve when CMA current observations are available.
+- Used active rain warnings and the CMA daily rain condition to set an honest visual floor while keeping the measured mm/h value separate.
+- Added visible station, provider, observation time and rain-warning details to synchronization status.
+- Added a source-labelled list from the next hour through 24:00, separate from the current station observation.
+- Added automated CMA station-selection, severe-rain regression, future-list and non-injected Windows system-location coverage.
+
+## [2.1.2] - 2026-08-11
+
+- Removed the duplicate world-space hour/rainfall readout; the weather status bar remains the single forecast readout.
+- Kept axes and the toolbar visible during ordinary pointer movement.
+- Limited temporary label and toolbar hiding to an actual pressed scene drag beyond the movement threshold.
+- Added an Electron interaction regression test for hover visibility and drag restoration.
+
 ## [2.1.1] - 2026-08-11
 
 - Replaced the obsolete guessed Moji adapter with the Alibaba Cloud Marketplace professional latitude/longitude APPCode contract.

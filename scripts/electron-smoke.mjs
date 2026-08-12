@@ -12,6 +12,8 @@ const record = (name, details = '') => checks.push({ name, status: 'passed', det
 const packagedExecutable = process.env.RAINFORM_SMOKE_EXECUTABLE
   ? path.resolve(process.env.RAINFORM_SMOKE_EXECUTABLE)
   : '';
+const smokeGeo = process.env.RAINFORM_SMOKE_GEO || '31.2304,121.4737';
+const smokeCity = process.env.RAINFORM_SMOKE_CITY || '上海';
 let application;
 let page;
 
@@ -23,8 +25,8 @@ try {
     env: {
       ...process.env,
       RAINFORM_E2E: '1',
-      RAINFORM_E2E_GEO: '31.2304,121.4737',
-      RAINFORM_E2E_CITY: '上海',
+      RAINFORM_E2E_GEO: smokeGeo,
+      RAINFORM_E2E_CITY: smokeCity,
       ELECTRON_DISABLE_SECURITY_WARNINGS: 'true'
     }
   });
@@ -37,15 +39,52 @@ try {
   await page.waitForSelector('#scene-root[data-webgl-status="ready"]', { timeout: 20_000 });
   const located = await page.evaluate(() => window.__rainformWeatherDebug.getState());
   assert.equal(located.mode, 'auto');
-  assert.match(located.city, /上海/);
+  assert.ok(located.city.includes(smokeCity), `expected initial city to include ${smokeCity}`);
+  assert.equal(located.provider, 'cma');
+  assert.ok(located.station?.id, 'expected a CMA current-observation station');
   assert.equal(located.rainfall.length, 25);
   record(
     'automatic geolocation and weather sync',
     `${located.city} via ${located.provider}${packagedExecutable ? ' (packaged executable)' : ''}`
   );
+  const futureWeather = await page.locator('#weather-hourly-list .weather-hourly-row').count();
+  assert.ok(futureWeather > 0, 'expected future hourly weather rows through 24:00');
+  assert.match(await page.locator('#weather-hourly-source').textContent(), /逐小时预报/);
+  record('station observation is followed by hourly forecast', `${futureWeather} future hours`);
+  await page.screenshot({ path: path.join(resultDirectory, 'desktop-initial-weather.png') });
 
   assert.equal(await page.locator('#scene-toolbar > button').count(), 2);
   record('toolbar contains two primary controls');
+
+  const sceneSize = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+  let hoverPoint = null;
+  for (let y = Math.round(sceneSize.height * 0.28); y <= Math.round(sceneSize.height * 0.78) && !hoverPoint; y += 48) {
+    for (let x = Math.round(sceneSize.width * 0.2); x <= Math.round(sceneSize.width * 0.8); x += 64) {
+      await page.mouse.move(x, y);
+      await page.waitForTimeout(24);
+      if (await page.locator('#scene-root').getAttribute('data-cursor-line-visibility') === 'visible') {
+        hoverPoint = { x, y };
+        break;
+      }
+    }
+  }
+  assert.ok(hoverPoint, 'expected to find an interactive chart point');
+  await page.mouse.move(hoverPoint.x + 4, hoverPoint.y + 2, { steps: 2 });
+  await page.waitForTimeout(520);
+  assert.equal(await page.locator('#scene-root').getAttribute('data-axis-visibility'), 'visible');
+  assert.equal(await page.locator('#scene-root').getAttribute('data-readout-visibility'), null);
+  assert.notEqual(await page.locator('#scene-toolbar').evaluate(element => getComputedStyle(element).opacity), '0');
+  record('hover movement keeps axes and toolbar visible without a duplicate scene readout');
+  await page.screenshot({ path: path.join(resultDirectory, 'desktop-no-duplicate-readout.png') });
+
+  await page.mouse.down();
+  await page.mouse.move(hoverPoint.x + 34, hoverPoint.y + 18, { steps: 4 });
+  await page.waitForFunction(() => document.querySelector('.rainfall-dashboard')?.classList.contains('is-dragged'));
+  assert.equal(await page.locator('#scene-root').getAttribute('data-axis-visibility'), 'hidden');
+  await page.mouse.up();
+  await page.waitForFunction(() => document.querySelector('#scene-root')?.dataset.axisVisibility === 'visible');
+  assert.equal(await page.locator('.rainfall-dashboard').evaluate(element => element.classList.contains('is-dragged')), false);
+  record('actual view drag temporarily hides and then restores chart labels');
 
   await page.locator('#rainfall-editor-toggle').click();
   await page.locator('#weather-relocate').click();

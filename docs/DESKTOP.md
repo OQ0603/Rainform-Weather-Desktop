@@ -6,9 +6,12 @@ This derivative keeps the original Rainform Three.js/WebGL renderer and adds a W
 
 - The Electron main process uses the Alibaba Cloud Marketplace Moji professional latitude/longitude API. It reads `MOJI_WEATHER_APPCODE`, `MOJI_WEATHER_CONDITION_TOKEN`, and `MOJI_WEATHER_FORECAST_TOKEN` from the launch environment and attempts Moji first.
 - `MOJI_WEATHER_PASSWORD` remains a compatibility alias for APPCode, while `MOJI_WEATHER_TOKEN` is a compatibility shared endpoint token.
-- If credentials are absent or Moji fails, the main process automatically requests Open-Meteo.
+- If credentials are absent or Moji fails, mainland-China coordinates first use the nearest China Meteorological Administration live station. Open-Meteo then fills only the 00:00–24:00 hourly curve.
+- If no nearby CMA station is available or the CMA request fails, the main process automatically requests Open-Meteo for both current and hourly weather.
 - If Moji current conditions succeed but its hourly token/request fails, Moji remains the current-condition source and only the hourly timeline is filled by Open-Meteo.
 - Open-Meteo also supplies city-name search. Coordinate-to-city display uses a no-key reverse-geocoding fallback because Open-Meteo's public geocoding endpoint accepts place names, not coordinate pairs.
+- CMA station observations include measured hourly precipitation, temperature, humidity, observation time and active rain alerts. A rain condition or warning may raise only the visual intensity floor; measured mm/h remains unchanged and is displayed separately.
+- The automatic panel separates the nearest-station observation from future weather. Only hours after the observation hour are listed through 24:00, with condition, forecast precipitation, temperature and an explicit hourly provider label.
 - Provider credentials are never exposed through the preload bridge or included in the renderer bundle.
 
 Example for a development launch in PowerShell:
@@ -36,7 +39,15 @@ The NSIS target is x64, uses an assisted installer, allows the user to choose th
 ```powershell
 pnpm run check
 pnpm run test:integration
+pnpm run test:cma-live
 pnpm run test:desktop
 ```
 
-The desktop smoke test uses a deterministic Shanghai coordinate in its test-only environment, exercises live Open-Meteo synchronization and city search, and verifies dry/light/heavy renderer state, audio mute/restore, component independence, and a 900x500 landscape layout.
+The system-location smoke deliberately has no injected coordinate and therefore requires a packaged executable:
+
+```powershell
+$env:RAINFORM_SYSTEM_LOCATION_EXECUTABLE='D:\path\to\Rainform Weather Desktop.exe'
+pnpm run test:system-location
+```
+
+The dedicated CMA live smoke uses a Puyang coordinate and records the station observation plus the future-hour list. The full desktop smoke uses a deterministic Shanghai coordinate in its test-only environment, exercises live CMA current observations, Open-Meteo hourly synchronization and city search, and verifies dry/light/heavy renderer state, audio mute/restore, component independence, and a 900x500 landscape layout.

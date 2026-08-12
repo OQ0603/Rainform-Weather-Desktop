@@ -574,12 +574,6 @@ const glslVec3 = (rgb) => `vec3(${rgb.map(glf).join(', ')})`;
 // orbit 鼠标旋转/缩放范围
 // ════════════════════════════════════════════════════════════════════════════
 const TUNING = {
-  // ── 图表读数位置 ── 使用世界坐标偏移定位右上角动态读数，随图表一起旋转。
-  readout: {
-    offsetX: 0,
-    offsetY: 0
-  },
-
   // ── 相机视角 ── 整体构图。按屏宽分三档，桌面端用 desktop。
   // pos: 相机位置 [x, y, z]。y 调大更俯视，调小更贴近水面；z 调大更远，调小更近。
   // target: 注视点 [x, y, z]。y 调大画面抬高，调小画面压低。
@@ -808,30 +802,14 @@ function applyGlobalThemePalette(theme) {
 applyGlobalThemeCss(globalThemePalette);
 applyGlobalThemePalette(globalThemePalette);
 
-function applyReadoutPosition() {
-  const offsetX = Number(TUNING.readout.offsetX) || 0;
-  const offsetY = Number(TUNING.readout.offsetY) || 0;
-  if (axisSystem?.readout) {
-    axisSystem.readout.mesh.position.set(
-      axisSystem.readout.anchorX + offsetX,
-      axisSystem.readout.anchorY + offsetY,
-      axisSystem.readout.anchorZ
-    );
-  }
-  root.dataset.readoutMode = 'world-space-rotating';
-  root.dataset.readoutOffsetX = String(offsetX);
-  root.dataset.readoutOffsetY = String(offsetY);
-  delete root.dataset.readoutBottom;
-  delete root.dataset.readoutRight;
-  delete root.dataset.readoutTop;
-}
-
 const isCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 function isPhoneLandscapeViewport() {
   const shortEdge = Math.min(window.innerWidth, window.innerHeight);
   const longEdge = Math.max(window.innerWidth, window.innerHeight);
-  return window.innerWidth > window.innerHeight && shortEdge <= 500 && longEdge <= 1000;
+  // BrowserWindow min-size and Windows chrome can turn a requested 900x500
+  // outer window into a viewport a little above the former 500px boundary.
+  return window.innerWidth > window.innerHeight && shortEdge <= 540 && longEdge <= 1000;
 }
 
 function targetRendererPixelRatio() {
@@ -985,7 +963,6 @@ scene.add(worldGroup);
 let axisSystem = createAxisSystem();
 chartCameraFitBounds = axisSystem.fitBounds.clone();
 applyCameraPreset();
-applyReadoutPosition();
 syncAxisLabelScale(axisSystem);
 updateRainPlotMask();
 
@@ -1272,7 +1249,6 @@ function rebuildRainfallSystems() {
 
   axisSystem = nextAxisSystem;
   chartCameraFitBounds = axisSystem.fitBounds.clone();
-  applyReadoutPosition();
   syncAxisLabelScale(axisSystem);
   mistBand = nextMistBand;
   rainChains = nextRainChains;
@@ -1347,109 +1323,6 @@ function clearRippleField(system) {
   system.texture = system.rtA.texture;
   waterPlane.material.uniforms.uHeightField.value = system.texture;
   root.dataset.activeRipples = '0';
-}
-
-function drawAxisReadout(readoutPanel, displayHour) {
-  const roundedHour = clamp(Math.round(displayHour), 0, 24);
-  const valueText = sampleRainfall(displayHour).toFixed(1);
-  const key = `${roundedHour}-${valueText}-${globalThemePalette.base}`;
-  if (readoutPanel.key === key) return;
-
-  const { canvas, context, texture } = readoutPanel;
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.textAlign = 'left';
-  context.textBaseline = 'middle';
-
-  const rightEdge = canvas.width - 12;
-  const unitText = i18n('axisUnit');
-  context.font = '450 32px Inter, "PingFang SC", "Microsoft YaHei", sans-serif';
-  const unitWidth = context.measureText(unitText).width;
-  const lineX = 18;
-  const lineWidth = 8;
-  const lineGap = 48;
-  const lineTop = 26;
-  const lineBottom = 218;
-  const contentLeft = lineX + lineWidth + lineGap;
-  const valueUnitGap = 16;
-  let valueFontSize = 116;
-  context.font = `350 ${valueFontSize}px Inter, "PingFang SC", "Microsoft YaHei", sans-serif`;
-  let valueWidth = context.measureText(valueText).width;
-  const availableValueWidth = rightEdge - unitWidth - valueUnitGap - contentLeft;
-  if (valueWidth > availableValueWidth) {
-    valueFontSize = Math.max(72, valueFontSize * availableValueWidth / valueWidth);
-    context.font = `350 ${valueFontSize}px Inter, "PingFang SC", "Microsoft YaHei", sans-serif`;
-    valueWidth = context.measureText(valueText).width;
-  }
-  const valueX = contentLeft;
-  const unitX = Math.min(rightEdge - unitWidth, valueX + valueWidth + valueUnitGap);
-
-  context.globalAlpha = 0.92;
-  context.fillStyle = themeHexCss(globalThemePalette.axisTick);
-  context.fillRect(lineX, lineTop, lineWidth, lineBottom - lineTop);
-
-  context.globalAlpha = 1;
-  context.fillStyle = themeHexCss(globalThemePalette.axisTime);
-  context.font = '550 42px Inter, "PingFang SC", "Microsoft YaHei", sans-serif';
-  context.fillText(`${String(roundedHour).padStart(2, '0')}:00`, valueX, 48);
-
-  context.fillStyle = themeHexCss(globalThemePalette.axisStrong);
-  context.font = `350 ${valueFontSize}px Inter, "PingFang SC", "Microsoft YaHei", sans-serif`;
-  context.fillText(valueText, valueX, 158);
-
-  context.fillStyle = themeHexCss(globalThemePalette.axisTick);
-  context.font = '450 32px Inter, "PingFang SC", "Microsoft YaHei", sans-serif';
-  context.fillText(unitText, unitX, 166);
-
-  texture.needsUpdate = true;
-  readoutPanel.key = key;
-}
-
-function createAxisReadoutPanel(anchorX, anchorY, anchorZ, opacity) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 480;
-  canvas.height = 260;
-  const context = canvas.getContext('2d');
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.minFilter = THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.generateMipmaps = false;
-  texture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
-
-  const material = new THREE.MeshBasicMaterial({
-    map: texture,
-    transparent: true,
-    opacity,
-    depthTest: false,
-    depthWrite: false,
-    fog: false,
-    toneMapped: false,
-    side: THREE.DoubleSide
-  });
-  const worldHeight = 0.98;
-  const worldWidth = worldHeight * canvas.width / canvas.height;
-  const geometry = new THREE.PlaneGeometry(worldWidth, worldHeight);
-  // 让画布右边缘固定在图表的最右端，内容自然向图表内部展开。
-  geometry.translate(-worldWidth * 0.5, 0, 0);
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.name = 'axis-dynamic-readout';
-  mesh.position.set(anchorX, anchorY, anchorZ);
-  mesh.renderOrder = 9.6;
-  mesh.visible = false;
-
-  const panel = {
-    mesh,
-    material,
-    canvas,
-    context,
-    texture,
-    anchorX,
-    anchorY,
-    anchorZ,
-    key: ''
-  };
-  drawAxisReadout(panel, state.selectedHour);
-  return panel;
 }
 
 function createAxisSystem() {
@@ -1596,16 +1469,6 @@ function createAxisSystem() {
     labelOpacityEntries.push({ material: titleLabel.material, baseOpacity: axisGraphicOpacity });
   }
 
-  const readoutPanel = createAxisReadoutPanel(
-    xMax,
-    headerTop - 0.49,
-    z + 0.05,
-    axisGraphicOpacity
-  );
-  readoutPanel.mesh.position.x += Number(TUNING.readout.offsetX) || 0;
-  readoutPanel.mesh.position.y += Number(TUNING.readout.offsetY) || 0;
-  labelOpacityEntries.push({ material: readoutPanel.material, baseOpacity: axisGraphicOpacity });
-
   const axes = createAxisBars('axis-lines', axisVertices, axisMaterial, 0.009, 9);
   const timeTicks = createAxisDots('time-ticks', timeTickPositions, tickMaterial, 0.011, 9.1);
   const valueTickMeshes = createAxisBars('value-ticks', valueTickVertices, tickMaterial, 0.008, 9.1);
@@ -1626,7 +1489,7 @@ function createAxisSystem() {
   selectedMarker.visible = false;
   hoverMarker.visible = false;
 
-  group.add(axes, timeTicks, valueTickMeshes, labelGroup, readoutPanel.mesh, selectedMarker, hoverMarker);
+  group.add(axes, timeTicks, valueTickMeshes, labelGroup, selectedMarker, hoverMarker);
   group.updateMatrixWorld(true);
   const fitBounds = new THREE.Box3().setFromObject(group, true);
 
@@ -1634,7 +1497,6 @@ function createAxisSystem() {
     group,
     fitBounds,
     labelGroup,
-    readout: readoutPanel,
     selectedMarker,
     hoverMarker,
     opacityEntries: [
@@ -1649,7 +1511,7 @@ function createAxisSystem() {
     fadeStartedAt: -1,
     timeTickCount: 13,
     valueTickCount: valueTickVertices.length / 6,
-    labelCount: 13 + tickValues.length * 2 + titleLabels.length + 1
+    labelCount: 13 + tickValues.length * 2 + titleLabels.length
   };
 }
 
@@ -1772,14 +1634,11 @@ function setAxisOpacity(system, opacity) {
 }
 
 function updateAxisSystem(system) {
-  // Keep click selection for the readout/highlight, but do not draw a second,
-  // stationary X-axis marker beside the cursor-following hover marker.
+  // Keep only the cursor-following time marker in the Three.js scene. The
+  // selected hour and expected rainfall are displayed once in the weather bar.
   system.selectedMarker.visible = false;
   system.hoverMarker.position.x = hourToX(state.pointerHour);
   system.hoverMarker.visible = state.pointerActive;
-  system.readout.mesh.visible = state.pointerActive;
-  if (state.pointerActive) drawAxisReadout(system.readout, state.pointerHour);
-  root.dataset.readoutVisibility = state.pointerActive ? 'visible' : 'hidden';
   root.dataset.cursorLineVisibility = state.pointerActive ? 'visible' : 'hidden';
 
 }
@@ -5557,7 +5416,6 @@ function onPointerDown(event) {
 
 function onPointerMove(event) {
   updatePointer(event);
-  if (state.pointerActive) pulseSceneInteraction();
 
   if (state.pointerDown) {
     // 旋转交给 OrbitControls；这里只判定是否发生拖拽(用于区分“点击选中”)。
@@ -5596,14 +5454,14 @@ function onPointerCancel(event) {
   state.pointerDown = false;
   state.pointerMoved = false;
   state.pointerActive = false;
-  dashboard.classList.remove('is-dragged', 'is-scene-interacting');
+  dashboard.classList.remove('is-dragged');
   dashboard.classList.remove('is-pointer-active');
   restoreAxisAfterDrag();
 }
 
 function clearChartHover() {
   state.pointerActive = false;
-  dashboard.classList.remove('is-pointer-active', 'is-scene-interacting');
+  dashboard.classList.remove('is-pointer-active');
 }
 
 function onPointerLeave() {
@@ -5615,23 +5473,8 @@ function onInteractionInterrupted() {
   state.pointerDown = false;
   state.pointerMoved = false;
   state.pointerActive = false;
-  dashboard.classList.remove('is-pointer-active', 'is-dragged', 'is-scene-interacting');
+  dashboard.classList.remove('is-pointer-active', 'is-dragged');
   restoreAxisAfterDrag();
-}
-
-let sceneInteractionTimer = null;
-
-function pulseSceneInteraction() {
-  dashboard.classList.add('is-scene-interacting');
-  hideAxisForDrag();
-  if (sceneInteractionTimer !== null) window.clearTimeout(sceneInteractionTimer);
-  sceneInteractionTimer = window.setTimeout(() => {
-    sceneInteractionTimer = null;
-    if (state.pointerDown) return;
-    dashboard.classList.remove('is-scene-interacting');
-    if (dashboard.classList.contains('has-editor-open') && isPhoneLandscapeViewport()) return;
-    restoreAxisAfterDrag();
-  }, 460);
 }
 
 function releaseActivePointer(pointerId = state.activePointerId) {

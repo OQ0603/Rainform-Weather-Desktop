@@ -139,6 +139,65 @@ test('Moji condition severity follows official rain levels', () => {
   assert.equal(weatherInternals.mojiRainFloor('阴', 13), 0);
 });
 
+test('CMA nearest live station overrides a stale light-rain forecast during a rain alert', async () => {
+  const requests = [];
+  const fetchImpl = async url => {
+    const href = String(url);
+    requests.push(href);
+    if (href.startsWith('https://weather.cma.cn/api/map/weather/1')) {
+      return jsonResponse({
+        msg: 'success',
+        code: 0,
+        data: {
+          city: [
+            ['54900', '濮阳', '中国', 3, 35.7, 115.03, 26, '大雨', 9, '北风', '微风', 22, '中雨', 8, '北风', '微风', 'AHA', '410900'],
+            ['58367', '上海', '中国', 2, 31.4, 121.45, 32, '多云', 1, '东风', '微风', 26, '阴', 2, '东风', '微风', 'ASH', '310000']
+          ]
+        }
+      });
+    }
+    if (href.startsWith('https://weather.cma.cn/api/weather/view?stationid=54900')) {
+      return jsonResponse({
+        msg: 'success',
+        code: 0,
+        data: {
+          location: { id: '54900', name: '濮阳', path: '中国, 河南, 濮阳' },
+          daily: [{ dayText: '大雨', dayCode: 9, nightText: '中雨', nightCode: 8 }],
+          now: { precipitation: 2.6, temperature: 23.1, humidity: 94 },
+          alarm: [{ title: '濮阳市气象台发布暴雨蓝色预警', signaltype: '暴雨', signallevel: '蓝色', severity: 'BLUE' }],
+          lastUpdate: '2026/08/12 10:05'
+        }
+      });
+    }
+    if (href.startsWith('https://api.open-meteo.com/')) return jsonResponse(openMeteoPayload());
+    throw new Error(`Unexpected URL ${href}`);
+  };
+
+  const weather = await fetchWeather({
+    latitude: 35.7619,
+    longitude: 115.0293,
+    city: '濮阳',
+    source: 'system'
+  }, {
+    fetchImpl,
+    mojiToken: '',
+    mojiPassword: ''
+  });
+
+  assert.equal(weather.provider, 'cma');
+  assert.equal(weather.forecastProvider, 'open-meteo');
+  assert.equal(weather.station.id, '54900');
+  assert.ok(weather.station.distanceKm < 10);
+  assert.equal(weather.current.precipitation, 2.6);
+  assert.equal(weather.current.visualPrecipitation, 25, 'rain alert must drive a visibly heavy scene');
+  assert.equal(weather.current.precipitationEstimated, true);
+  assert.equal(weather.current.weatherText, '大雨');
+  assert.equal(weather.alert.label, '暴雨蓝色预警');
+  assert.equal(weather.rainfall[10], 25);
+  assert.ok(requests.some(href => href.includes('/api/map/weather/1')));
+  assert.ok(requests.some(href => href.includes('stationid=54900')));
+});
+
 test('weather falls back to Open-Meteo and reverse resolves the city', async () => {
   const fetchImpl = async url => {
     const href = String(url);
