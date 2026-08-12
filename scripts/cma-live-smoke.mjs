@@ -48,9 +48,11 @@ try {
   assert.ok(evidence.weather.station?.id);
   assert.match(evidence.summary, /中国气象局实况/);
   assert.match(evidence.syncStatus, /实况/);
-  assert.match(evidence.hourlySource, /逐小时预报/);
+  assert.match(evidence.hourlySource, /中国气象局趋势/);
   assert.ok(evidence.futureHours > 0);
   assert.ok(evidence.futurePreview.every(item => /\d{2}:00/.test(item)));
+  assert.ok(evidence.futurePreview.some(item => /大雨/.test(item)));
+  assert.doesNotMatch(evidence.futurePreview.join(' '), /毛毛雨/);
   assert.ok(evidence.visualPrecipitation >= Number(evidence.weather.current?.precipitation || 0));
   assert.doesNotMatch(evidence.status, /毛毛雨/);
 

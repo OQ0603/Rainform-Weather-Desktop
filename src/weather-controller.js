@@ -73,9 +73,14 @@ function renderSelection() {
     elements.selectionText.textContent = '';
     return;
   }
-  const rainText = selected.value > 0
-    ? `${formatRainfall(selected.value)} mm/h`
-    : '暂无降雨';
+  const selectedForecast = state.mode === 'auto'
+    ? state.weather?.hourly?.find(item => Number(item.hour) === Number(selected.hour))
+    : null;
+  const rainText = selectedForecast?.precipitationEstimated
+    ? `${selectedForecast.weatherText}趋势（气象局）`
+    : selected.value > 0
+      ? `${formatRainfall(selected.value)} mm/h`
+      : '暂无降雨';
   elements.selectionText.textContent = `预计 ${String(selected.hour).padStart(2, '0')}:00 · ${rainText}`;
   elements.selectionText.hidden = false;
 }
@@ -103,8 +108,8 @@ function weatherStatusText(weather) {
 
 function providerLabel(weather) {
   if (weather.provider === 'cma') {
-    return weather.forecastProvider === 'open-meteo'
-      ? '中国气象局实况 + Open-Meteo逐小时'
+    return weather.forecastProvider === 'cma-trend+open-meteo'
+      ? '中国气象局实况 + 气象局日夜趋势'
       : '中国气象局实况';
   }
   if (weather.provider === 'open-meteo') return 'Open-Meteo（国内实况不可用）';
@@ -120,6 +125,7 @@ function sourceUpdateLabel(weather) {
 
 function hourlySourceLabel(weather) {
   if (weather?.forecastProvider === 'moji') return '墨迹天气逐小时预报';
+  if (weather?.forecastProvider === 'cma-trend+open-meteo') return '中国气象局趋势 · Open-Meteo小时刻度';
   if (weather?.forecastProvider === 'open-meteo') return 'Open-Meteo 逐小时预报';
   return '后续预报暂不可用';
 }
@@ -162,7 +168,11 @@ function renderHourlyForecast(weather, phase = 'success', message = '') {
     const rain = document.createElement('span');
     const amount = Number(item.precipitation) || 0;
     rain.className = amount > 0 ? 'has-rain' : '';
-    rain.textContent = amount > 0 ? `${formatRainfall(amount)} mm/h` : '无雨';
+    rain.textContent = item.precipitationEstimated
+      ? '气象局趋势'
+      : amount > 0
+        ? `${formatRainfall(amount)} mm/h`
+        : '无雨';
     const temperature = document.createElement('span');
     temperature.textContent = `${Math.round(Number(item.temperature) || 0)}°C`;
 

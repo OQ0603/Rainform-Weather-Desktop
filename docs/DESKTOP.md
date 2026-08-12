@@ -6,12 +6,12 @@ This derivative keeps the original Rainform Three.js/WebGL renderer and adds a W
 
 - The Electron main process uses the Alibaba Cloud Marketplace Moji professional latitude/longitude API. It reads `MOJI_WEATHER_APPCODE`, `MOJI_WEATHER_CONDITION_TOKEN`, and `MOJI_WEATHER_FORECAST_TOKEN` from the launch environment and attempts Moji first.
 - `MOJI_WEATHER_PASSWORD` remains a compatibility alias for APPCode, while `MOJI_WEATHER_TOKEN` is a compatibility shared endpoint token.
-- If credentials are absent or Moji fails, mainland-China coordinates first use the nearest China Meteorological Administration live station. Open-Meteo then fills only the 00:00–24:00 hourly curve.
+- If credentials are absent or Moji fails, mainland-China coordinates first use the nearest China Meteorological Administration live station. CMA's day/night forecast constrains future rain conditions; Open-Meteo fills only the hour grid and temperature details.
 - If no nearby CMA station is available or the CMA request fails, the main process automatically requests Open-Meteo for both current and hourly weather.
 - If Moji current conditions succeed but its hourly token/request fails, Moji remains the current-condition source and only the hourly timeline is filled by Open-Meteo.
 - Open-Meteo also supplies city-name search. Coordinate-to-city display uses a no-key reverse-geocoding fallback because Open-Meteo's public geocoding endpoint accepts place names, not coordinate pairs.
 - CMA station observations include measured hourly precipitation, temperature, humidity, observation time and active rain alerts. A rain condition or warning may raise only the visual intensity floor; measured mm/h remains unchanged and is displayed separately.
-- The automatic panel separates the nearest-station observation from future weather. Only hours after the observation hour are listed through 24:00, with condition, forecast precipitation, temperature and an explicit hourly provider label.
+- The automatic panel separates the nearest-station observation from future weather. Only hours after the observation hour are listed through 24:00. When CMA's day/night forecast is wetter than the Open-Meteo grid, the UI shows the CMA condition as a trend rather than presenting the visual floor as a measured mm/h value.
 - Provider credentials are never exposed through the preload bridge or included in the renderer bundle.
 
 Example for a development launch in PowerShell:

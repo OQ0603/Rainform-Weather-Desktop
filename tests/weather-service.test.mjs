@@ -185,7 +185,7 @@ test('CMA nearest live station overrides a stale light-rain forecast during a ra
   });
 
   assert.equal(weather.provider, 'cma');
-  assert.equal(weather.forecastProvider, 'open-meteo');
+  assert.equal(weather.forecastProvider, 'cma-trend+open-meteo');
   assert.equal(weather.station.id, '54900');
   assert.ok(weather.station.distanceKm < 10);
   assert.equal(weather.current.precipitation, 2.6);
@@ -194,6 +194,13 @@ test('CMA nearest live station overrides a stale light-rain forecast during a ra
   assert.equal(weather.current.weatherText, '大雨');
   assert.equal(weather.alert.label, '暴雨蓝色预警');
   assert.equal(weather.rainfall[10], 25);
+  assert.equal(weather.rainfall[14], 10, 'CMA daytime heavy-rain trend must prevent a drizzle forecast');
+  assert.equal(weather.rainfall[20], 4, 'CMA nighttime moderate-rain trend must remain visible');
+  assert.equal(weather.hourly[14].weatherText, '大雨');
+  assert.equal(weather.hourly[14].rawPrecipitation, 0);
+  assert.equal(weather.hourly[14].precipitationEstimated, true);
+  assert.equal(weather.forecastTrend.dayText, '大雨');
+  assert.equal(weather.forecastTrend.nightText, '中雨');
   assert.ok(requests.some(href => href.includes('/api/map/weather/1')));
   assert.ok(requests.some(href => href.includes('stationid=54900')));
 });

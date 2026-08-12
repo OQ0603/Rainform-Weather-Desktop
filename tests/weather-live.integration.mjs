@@ -18,7 +18,7 @@ test('live Shanghai search with CMA current conditions and an hourly forecast', 
     mojiPassword: ''
   });
   assert.equal(weather.provider, 'cma');
-  assert.equal(weather.forecastProvider, 'open-meteo');
+  assert.equal(weather.forecastProvider, 'cma-trend+open-meteo');
   assert.ok(weather.station?.id, 'a nearest CMA live station must be selected');
   assert.equal(weather.city, '上海');
   assert.equal(weather.rainfall.length, 25);

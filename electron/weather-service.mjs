@@ -376,6 +376,29 @@ function currentOnlyTimeline(currentHour, temperature, weatherText, visualPrecip
   }));
 }
 
+function applyCmaRainTrend(hourly, today, currentHour) {
+  if (!today || !Array.isArray(hourly)) return hourly;
+  return hourly.map(item => {
+    const hour = Number(item.hour);
+    if (!Number.isInteger(hour) || hour <= currentHour || hour > 24) return item;
+    const daylight = hour >= 6 && hour < 18;
+    const weatherText = String(daylight ? today.dayText || '' : today.nightText || '');
+    const weatherCode = finiteNumber(daylight ? today.dayCode : today.nightCode);
+    const trendFloor = rainConditionFloor(weatherText, weatherCode);
+    const rawPrecipitation = precipitation(item.precipitation);
+    const rawConditionFloor = rainConditionFloor(item.weatherText);
+    if (trendFloor <= Math.max(rawPrecipitation, rawConditionFloor)) return item;
+    return {
+      ...item,
+      weatherText,
+      precipitation: trendFloor,
+      rawPrecipitation,
+      precipitationEstimated: true,
+      forecastSource: 'cma-trend'
+    };
+  });
+}
+
 async function fetchCma(latitude, longitude, options = {}) {
   const stations = await fetchCmaStations(options);
   const station = nearestCmaStation(stations, latitude, longitude);
@@ -415,6 +438,8 @@ async function fetchCma(latitude, longitude, options = {}) {
   let forecastFallbackReason = '';
   try {
     hourly = (await fetchOpenMeteo(latitude, longitude, options)).hourly;
+    hourly = applyCmaRainTrend(hourly, today, currentHour);
+    forecastProvider = 'cma-trend+open-meteo';
   } catch (error) {
     forecastProvider = 'cma-current-only';
     forecastFallbackReason = error instanceof Error ? error.message : '逐小时预报请求失败';
@@ -444,6 +469,14 @@ async function fetchCma(latitude, longitude, options = {}) {
       name: cleanLocationName(data.location?.name || station.city),
       distanceKm: Math.round(station.distanceKm * 10) / 10
     },
+    forecastTrend: today
+      ? {
+          provider: 'cma',
+          date: String(today.date || ''),
+          dayText: String(today.dayText || ''),
+          nightText: String(today.nightText || '')
+        }
+      : null,
     alert,
     current: {
       precipitation: measured,
@@ -698,6 +731,7 @@ export const weatherInternals = Object.freeze({
   normalizeMojiHourly,
   normalizeCmaStations,
   nearestCmaStation,
+  applyCmaRainTrend,
   rainConditionFloor,
   mojiRainFloor,
   mojiCurrentRain,

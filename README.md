@@ -16,9 +16,9 @@ An unofficial, noncommercial Windows desktop derivative that drives the original
 
 前往 [最新版本 Release](https://github.com/OQ0603/Rainform-Weather-Desktop/releases/latest)：
 
-- `Rainform-Weather-Desktop-2.1.3-x64.exe`：Windows x64 NSIS 安装包，可选择安装目录，并创建桌面及开始菜单快捷方式。
-- `Rainform-Weather-Desktop-2.1.3-x64-portable.zip`：解压后直接运行的便携版。
-- `Rainform-Weather-Desktop-2.1.3-Test-Results.md`：构建、中国气象局实况、在线天气及桌面冒烟测试记录。
+- `Rainform-Weather-Desktop-2.1.4-x64.exe`：Windows x64 NSIS 安装包，可选择安装目录，并创建桌面及开始菜单快捷方式。
+- `Rainform-Weather-Desktop-2.1.4-x64-portable.zip`：解压后直接运行的便携版。
+- `Rainform-Weather-Desktop-2.1.4-Test-Results.md`：构建、中国气象局实况、在线天气及桌面冒烟测试记录。
 
 当前安装包未购买商业代码签名证书，Windows SmartScreen 可能显示“未知发布者”。请从本仓库 Release 下载并核对 Release 中公布的 SHA256。
 
@@ -27,9 +27,9 @@ An unofficial, noncommercial Windows desktop derivative that drives the original
 - 默认自动天气模式，启动时请求 Windows 定位并识别当前城市。
 - 搜索城市、切换候选城市，以及重新定位恢复当前位置。
 - 墨迹天气主进程适配；无凭据或请求失败时，国内优先切换中国气象局实况站，最终才回退 Open-Meteo。
-- 国内无墨迹凭据时优先匹配最近的中国气象局实况站；Open-Meteo只补齐逐小时曲线。
+- 国内无墨迹凭据时优先匹配最近的中国气象局实况站；后续雨势先服从中国气象局当天日间/夜间趋势，Open-Meteo只补齐小时刻度和温度。
 - 当前降雨实测值、实况站、更新时间和暴雨预警会明确显示；预警强度可增强画面但不会伪造 mm/h。
-- 自动面板将“当前监测实况”和“下一小时至 24:00 逐小时预报”分开列出，每小时显示天气、降雨和温度及其来源。
+- 自动面板将“当前监测实况”和“下一小时至 24:00 后续趋势”分开列出；气象局报大雨/中雨时，不再被 Open-Meteo 的毛毛雨结果降级。
 - 将预报转换成 00:00–24:00 共 25 个降雨数据点。
 - 自动与手动降雨模式可来回切换，手动编辑后雨幕和声音立即变化。
 - 无雨时彻底停止雨幕、前景雨滴、瀑布、水花、粒子和雨声。
@@ -50,7 +50,7 @@ pnpm start
 
 旧环境变量仍兼容：`MOJI_WEATHER_PASSWORD` 作为 APPCode，`MOJI_WEATHER_TOKEN` 作为共享接口 token。墨迹不同接口通常使用不同 token，推荐使用上面的三个明确变量。
 
-不要把真实凭据写入 `.env.example`、源码、GitHub Actions 或安装包。没有墨迹凭据时，国内坐标会明确显示最近的中国气象局实况站，Open-Meteo只补全逐小时数据；墨迹实况成功而逐小时接口不可用时，也会保留墨迹实况并仅用 Open-Meteo 补全逐小时数据。
+不要把真实凭据写入 `.env.example`、源码、GitHub Actions 或安装包。没有墨迹凭据时，国内坐标会明确显示最近的中国气象局实况站，并以气象局日间/夜间预报约束后续雨势；Open-Meteo只补全小时刻度和温度。墨迹实况成功而逐小时接口不可用时，也会保留墨迹实况并仅用 Open-Meteo 补全逐小时数据。
 
 ## 本地开发
 
@@ -100,14 +100,14 @@ docs/                      # 桌面构建和原项目文档
 
 ## 验证摘要
 
-2.1.3 发布前完成了以下实际验证：
+2.1.4 发布前完成了以下实际验证：
 
 - 项目检查、15 项单元/界面契约测试和 Vite 生产构建通过。
 - 墨迹官方 APPCode/POST 经纬度请求契约通过模拟响应验证；大暴雨实况会覆盖当前小时的轻量 qpf 以驱动暴雨画面，但不会伪造实测 mm/h。
-- 中国气象局濮阳站实时返回 2.6 mm/h、大雨和暴雨蓝色预警；同一位置的旧 Open-Meteo 值为 0.2 mm/h，已切换为中国气象局实况优先。
-- 中国气象局上海实况、Open-Meteo逐小时数据及“上海”城市搜索在线集成通过。
+- 中国气象局濮阳站实时返回大雨和暴雨蓝色预警；气象局官方页面显示后续仍有连续降水，后续日间大雨/夜间中雨趋势不再被 Open-Meteo 毛毛雨降级。
+- 中国气象局上海实况、气象局趋势约束、Open-Meteo小时刻度及“上海”城市搜索在线集成通过。
 - 开发版 Electron 的 16 项桌面冒烟测试通过，包括监测实况后的逐小时列表、删除 Three.js 重复读数牌、普通悬停保持坐标轴与工具栏、实际拖动临时隐藏并在松开后恢复。
-- 未注入测试坐标的 2.1.3 打包程序 Windows 系统定位成功，识别为濮阳市，匹配濮阳站约 6.5 km 并完成实况和逐小时天气同步。
+- 未注入测试坐标的打包程序 Windows 系统定位成功，识别为濮阳市并完成实况和后续趋势同步。
 - 无雨时所有降雨粒子和声音增益为 0；小雨和大雨密度差异通过断言。
 - 旧效果控制台、齿轮按钮和旧本地调参读取已从源码删除。
 - NSIS 安装包和便携 ZIP 的归档完整性检查通过。

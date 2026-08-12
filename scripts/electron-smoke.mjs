@@ -49,7 +49,7 @@ try {
   );
   const futureWeather = await page.locator('#weather-hourly-list .weather-hourly-row').count();
   assert.ok(futureWeather > 0, 'expected future hourly weather rows through 24:00');
-  assert.match(await page.locator('#weather-hourly-source').textContent(), /逐小时预报/);
+  assert.match(await page.locator('#weather-hourly-source').textContent(), /中国气象局趋势/);
   record('station observation is followed by hourly forecast', `${futureWeather} future hours`);
   await page.screenshot({ path: path.join(resultDirectory, 'desktop-initial-weather.png') });
 

@@ -62,7 +62,7 @@ test('renderer uses IPC and never reads Moji environment secrets', () => {
   assert.doesNotMatch(controller, /MOJI_WEATHER_|process\.env/);
   assert.match(controller, /desktop\.fetchWeather/);
   assert.match(html, /connect-src 'none'/);
-  assert.match(controller, /中国气象局实况 \+ Open-Meteo逐小时/);
+  assert.match(controller, /中国气象局实况 \+ 气象局日夜趋势/);
   assert.match(controller, /weather\.alert\?\.label/);
 });
 
@@ -71,7 +71,9 @@ test('automatic mode separates station observations from future hourly forecast'
   assert.match(html, /id="weather-hourly-list"/);
   assert.match(controller, /Number\(item\.hour\) > currentHour/);
   assert.match(controller, /Open-Meteo 逐小时预报/);
-  assert.match(controller, /amount > 0 \? `\$\{formatRainfall\(amount\)\} mm\/h` : '无雨'/);
+  assert.match(controller, /中国气象局趋势 · Open-Meteo小时刻度/);
+  assert.match(controller, /selectedForecast\?\.precipitationEstimated/);
+  assert.match(controller, /rain\.textContent = item\.precipitationEstimated/);
   assert.match(styles, /\.weather-hourly-row/);
 });
 

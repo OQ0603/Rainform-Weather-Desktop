@@ -6,6 +6,12 @@ All notable Rainform releases are documented here.
 
 - Public source repository governance, validation and noncommercial licensing.
 
+## [2.1.4] - 2026-08-12
+
+- Prevented future hours from dropping to drizzle when the same CMA station's official day/night forecast remains heavy or moderate rain.
+- Made CMA rain conditions the future visual floor while retaining Open-Meteo only for the hour grid and temperatures.
+- Labelled trend-adjusted rows and selected points as CMA trends instead of presenting estimated visual intensity as measured mm/h.
+
 ## [2.1.3] - 2026-08-12
 
 - Added nearest-station China Meteorological Administration current observations as the default no-credential source in mainland China.
