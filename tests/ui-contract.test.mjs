@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-const [html, main, controller, electronMain, packageJsonText] = await Promise.all([
+const [html, main, styles, controller, electronMain, packageJsonText] = await Promise.all([
   readFile('index.html', 'utf8'),
   readFile('src/main.js', 'utf8'),
+  readFile('src/styles.css', 'utf8'),
   readFile('src/weather-controller.js', 'utf8'),
   readFile('electron/main.mjs', 'utf8'),
   readFile('package.json', 'utf8')
@@ -33,11 +34,25 @@ test('weather status is independent and duplicate rainfall readouts are absent',
   assert.match(controller, /正在\$\{condition\.includes\('雨'\)/);
 });
 
+test('duplicate world-space readout is removed and drag-only hiding remains', () => {
+  assert.doesNotMatch(main, /pulseSceneInteraction|is-scene-interacting/);
+  assert.doesNotMatch(main, /createAxisReadoutPanel|drawAxisReadout|axis-dynamic-readout|readoutVisibility/);
+  assert.match(main, /Math\.hypot\(dx, dy\) > AXIS_CONFIG\.dragThreshold[\s\S]*?hideAxisForDrag\(\)/);
+  assert.match(styles, /\.rainfall-dashboard\.is-dragged \.scene-toolbar/);
+});
+
 test('dry data rebuilds zero rain systems and forces sound gain to zero', () => {
   assert.match(main, /dry \? 0 : Math\.max\(1, Math\.round\(QUALITY\.chains/);
   assert.match(main, /dry \|\| !hasPeaks \? 0 : QUALITY\.waterfallFilaments/);
   assert.match(main, /if \(dry\) \{[\s\S]*setRainSoundVolumeImmediately\(0\)/);
   assert.match(main, /rainfallDryState\.hidden = !dry/);
+});
+
+test('automatic rain audio follows current observed rainfall instead of the full-day curve', () => {
+  assert.match(main, /if \(liveRainfall !== null\)/);
+  assert.match(main, /liveRainfall \/ VISUAL_RAINFALL_REFERENCE/);
+  assert.match(controller, /response\.weather\.current\.precipitation/);
+  assert.match(controller, /rainform\.setLiveRainfall\(null\)/);
 });
 
 test('desktop security and NSIS install choices are configured', () => {
@@ -54,4 +69,40 @@ test('renderer uses IPC and never reads Moji environment secrets', () => {
   assert.doesNotMatch(controller, /MOJI_WEATHER_|process\.env/);
   assert.match(controller, /desktop\.fetchWeather/);
   assert.match(html, /connect-src 'none'/);
+  assert.match(controller, /中国气象局实况 \+ 气象局日夜趋势/);
+  assert.match(controller, /weather\.alert\?\.label/);
+});
+
+test('automatic mode shows the full day and separates past, current and future hours', () => {
+  assert.match(html, /id="weather-hourly-title">全天 00:00–24:00/);
+  assert.match(html, /id="weather-hourly-list"/);
+  assert.match(controller, /period = hour < currentHour \? 'past' : hour === currentHour \? 'current' : 'future'/);
+  assert.match(controller, /period === 'past' \? '较早' : period === 'current' \? '实况' : '未来'/);
+  assert.match(controller, /elements\.hourlyList\.scrollTop = Math\.max\(0, elements\.hourlyList\.scrollTop \+ offset\)/);
+  assert.match(controller, /Open-Meteo 逐小时预报/);
+  assert.match(controller, /中国气象局趋势 · Open-Meteo小时刻度/);
+  assert.match(controller, /selectedForecast\?\.precipitationEstimated/);
+  assert.match(controller, /period === 'past'[\s\S]*?`\$\{time\} 实况`/);
+  assert.match(controller, /period === 'current'[\s\S]*?`\$\{time\} 当前`/);
+  assert.match(controller, /period === 'future'[\s\S]*?`预计 \$\{time\}`/);
+  assert.match(controller, /period === 'future' && selectedForecast\?\.precipitationEstimated/);
+  assert.match(controller, /rain\.textContent = period === 'future' && item\.precipitationEstimated/);
+  assert.match(controller, /中国天气网 · 整点实况 \+ 分时预报/);
+  assert.match(controller, /item\.forecastSource === 'weather-china'/);
+  assert.match(controller, /Number\(item\.hour\) > Number\(weather\.currentHour\)/);
+  assert.match(styles, /\.weather-hourly-row/);
+  assert.match(styles, /\.weather-hourly-row\.is-current/);
+});
+
+test('automatic weather has immediate refresh and a 5 minute timer without relocating', () => {
+  assert.match(html, /id="weather-refresh"[^>]*>立即刷新<\/button>/);
+  assert.match(html, /每5分钟自动刷新；立即刷新不会重新定位/);
+  assert.match(controller, /AUTO_REFRESH_INTERVAL_MS = 5 \* 60 \* 1000/);
+  assert.match(controller, /elements\.refresh\.addEventListener\('click', \(\) => refreshWeather\(\)\)/);
+  assert.match(controller, /if \(!state\.lastRequest\) return locateAndSync\(\)/);
+  assert.match(controller, /refreshWeather\(\{ automatic: true \}\)/);
+});
+
+test('a packaged executable has a non-injected Windows location smoke command', () => {
+  assert.equal(packageJson.scripts['test:system-location'], 'node scripts/system-location-smoke.mjs');
 });

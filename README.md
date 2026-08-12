@@ -16,9 +16,9 @@ An unofficial, noncommercial Windows desktop derivative that drives the original
 
 前往 [最新版本 Release](https://github.com/OQ0603/Rainform-Weather-Desktop/releases/latest)：
 
-- `Rainform-Weather-Desktop-2.1.1-x64.exe`：Windows x64 NSIS 安装包，可选择安装目录，并创建桌面及开始菜单快捷方式。
-- `Rainform-Weather-Desktop-2.1.1-x64-portable.zip`：解压后直接运行的便携版。
-- `Rainform-Weather-Desktop-2.1.1-Test-Results.md`：构建、在线天气、墨迹契约及桌面冒烟测试记录。
+- `Rainform-Weather-Desktop-2.1.7-x64.exe`：Windows x64 NSIS 安装包，可选择安装目录，并创建桌面及开始菜单快捷方式。
+- `Rainform-Weather-Desktop-2.1.7-x64-portable.zip`：解压后直接运行的便携版。
+- `Rainform-Weather-Desktop-2.1.7-Test-Results.md`：构建、中国天气网实况、在线天气及桌面冒烟测试记录。
 
 当前安装包未购买商业代码签名证书，Windows SmartScreen 可能显示“未知发布者”。请从本仓库 Release 下载并核对 Release 中公布的 SHA256。
 
@@ -26,7 +26,14 @@ An unofficial, noncommercial Windows desktop derivative that drives the original
 
 - 默认自动天气模式，启动时请求 Windows 定位并识别当前城市。
 - 搜索城市、切换候选城市，以及重新定位恢复当前位置。
-- 墨迹天气主进程适配；无凭据或请求失败时自动回退 Open-Meteo。
+- 自动天气优先同步中国天气网；濮阳华龙区域固定匹配用户指定的 `101181306` 页面。
+- 当前小时以前直接使用中国天气网页面中的24小时整点实测降水量，当前小时使用网站最新整点实况。
+- 后续小时按中国天气网分时段预报中的雨况生成趋势；只显示“中国天气网预报”，不把天气现象换算值冒充实测 mm/h。
+- 选中当天较早时段显示“实况”，选中当前小时显示“当前”；只有尚未发生的时段才显示“预计”，手动数据则显示“已选”。
+- 自动模式雨声只服从网站当前整点实测；当前为0时，即使历史有雨或未来预报有雨，实际音量仍为0。
+- 自动面板提供“立即刷新”和“重新定位”两个独立按钮；立即刷新及每5分钟自动刷新都复用当前坐标，不会重复请求定位。
+- 中国天气网失败时依次保留墨迹天气、中国气象局和 Open-Meteo 降级链路，网络失败不会影响手动模式。
+- 自动面板列出完整的 00:00–24:00：较早时段、当前实况和未来趋势都有明确标记，打开时自动滚到当前小时。
 - 将预报转换成 00:00–24:00 共 25 个降雨数据点。
 - 自动与手动降雨模式可来回切换，手动编辑后雨幕和声音立即变化。
 - 无雨时彻底停止雨幕、前景雨滴、瀑布、水花、粒子和雨声。
@@ -47,7 +54,7 @@ pnpm start
 
 旧环境变量仍兼容：`MOJI_WEATHER_PASSWORD` 作为 APPCode，`MOJI_WEATHER_TOKEN` 作为共享接口 token。墨迹不同接口通常使用不同 token，推荐使用上面的三个明确变量。
 
-不要把真实凭据写入 `.env.example`、源码、GitHub Actions 或安装包。没有墨迹凭据时软件会明确显示 Open-Meteo；墨迹实况成功而逐小时接口不可用时，会保留墨迹实况并仅用 Open-Meteo 补全逐小时数据。
+不要把真实凭据写入 `.env.example`、源码、GitHub Actions 或安装包。中国天气网公开页面不需要密钥，并作为自动时间线主来源；页面不可用时才进入墨迹天气、中国气象局和 Open-Meteo 降级链路。所有请求仍在 Electron 主进程中执行。
 
 ## 本地开发
 
@@ -63,7 +70,15 @@ pnpm start
 桌面冒烟测试：
 
 ```powershell
+pnpm run test:weather-china-live
 pnpm run test:desktop
+```
+
+打包后真实 Windows 系统定位验证（不注入测试坐标）：
+
+```powershell
+$env:RAINFORM_SYSTEM_LOCATION_EXECUTABLE='D:\path\to\Rainform Weather Desktop.exe'
+pnpm run test:system-location
 ```
 
 构建 Windows x64 NSIS 安装包：
@@ -81,19 +96,22 @@ electron/                  # Electron 主进程、安全 preload、天气服务
 src/                       # Three.js 场景、天气控制器和界面样式
 tests/                     # 天气服务与界面契约测试
 scripts/electron-smoke.mjs # Playwright Electron 桌面冒烟测试
+scripts/weather-china-live-smoke.mjs # 华龙101181306实况和后续分时预报验证
+scripts/system-location-smoke.mjs # 打包程序真实 Windows 定位验证
 build/                     # Windows 图标
 docs/                      # 桌面构建和原项目文档
 ```
 
 ## 验证摘要
 
-2.1.1 发布前完成了以下实际验证：
+2.1.7 发布前完成了以下实际验证：
 
-- 项目检查、11 项单元/界面契约测试和 Vite 生产构建通过。
+- 项目检查、19 项单元/界面契约测试和 Vite 生产构建通过。
 - 墨迹官方 APPCode/POST 经纬度请求契约通过模拟响应验证；大暴雨实况会覆盖当前小时的轻量 qpf 以驱动暴雨画面，但不会伪造实测 mm/h。
-- Open-Meteo 在线天气及“上海”城市搜索通过。
-- 已打包 EXE 的 13 项桌面冒烟测试通过。
-- 未注入测试坐标的打包后 Windows 系统定位成功，识别为濮阳市并完成天气同步。
+- 中国天气网华龙 `101181306` 实时页面解析通过：已过时段采用网站整点实测降水，未来采用网站分时预报；界面没有混入 Open-Meteo 或气象局趋势。
+- 中国天气网上海实况与预报、“上海”候选城市搜索和立即切换在线集成通过。
+- 开发版 Electron 的 18 项桌面冒烟测试通过，包括过去时段使用“实况”且只有未来时段使用“预计”、不重新定位的立即刷新、独立重新定位、监测实况后的逐小时列表、删除 Three.js 重复读数牌、普通悬停保持坐标轴与工具栏、实际拖动临时隐藏并在松开后恢复。
+- 未注入测试坐标的打包程序 Windows 系统定位成功，识别为华龙区并完成实况和后续趋势同步。
 - 无雨时所有降雨粒子和声音增益为 0；小雨和大雨密度差异通过断言。
 - 旧效果控制台、齿轮按钮和旧本地调参读取已从源码删除。
 - NSIS 安装包和便携 ZIP 的归档完整性检查通过。

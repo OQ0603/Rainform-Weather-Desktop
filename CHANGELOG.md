@@ -6,6 +6,49 @@ All notable Rainform releases are documented here.
 
 - Public source repository governance, validation and noncommercial licensing.
 
+## [2.1.7] - 2026-08-12
+
+- Changed the selected-hour status wording so elapsed automatic hours are labelled as observations, the present hour as current, and only later hours as expected forecasts.
+- Changed manual selections to an explicit selected-hour label instead of forecast wording.
+- Added a desktop regression check covering past and future selected-hour labels.
+
+## [2.1.6] - 2026-08-12
+
+- Made China Weather (`weather.com.cn`) the primary automatic timeline source, with Hualong/Puyang mapped to the requested `101181306` page.
+- Filled elapsed hours from the page's measured `observe24h_data.od26` precipitation instead of a forecast grid.
+- Filled future hours from the page's `hour3data` weather conditions and labelled those visual values as China Weather forecasts rather than measured mm/h.
+- Drove automatic-mode audio from the current measured hour, so past or forecast rain cannot play rain sound while the current website observation is dry.
+- Added a non-locating immediate refresh action and automatic refresh every five minutes; relocation remains a separate explicit action.
+- Retained Moji, CMA and Open-Meteo as failure fallbacks, while keeping provider requests in the Electron main process.
+
+## [2.1.5] - 2026-08-12
+
+- Restored the full 00:00–24:00 list instead of hiding hours before the current observation.
+- Labelled rows as earlier, live observation or future, and automatically centered the current hour when the list opens.
+- Kept the current row on measured station precipitation while future CMA trend rows remain explicitly estimated.
+
+## [2.1.4] - 2026-08-12
+
+- Prevented future hours from dropping to drizzle when the same CMA station's official day/night forecast remains heavy or moderate rain.
+- Made CMA rain conditions the future visual floor while retaining Open-Meteo only for the hour grid and temperatures.
+- Labelled trend-adjusted rows and selected points as CMA trends instead of presenting estimated visual intensity as measured mm/h.
+
+## [2.1.3] - 2026-08-12
+
+- Added nearest-station China Meteorological Administration current observations as the default no-credential source in mainland China.
+- Kept Open-Meteo only for the 00:00–24:00 hourly curve when CMA current observations are available.
+- Used active rain warnings and the CMA daily rain condition to set an honest visual floor while keeping the measured mm/h value separate.
+- Added visible station, provider, observation time and rain-warning details to synchronization status.
+- Added a source-labelled list from the next hour through 24:00, separate from the current station observation.
+- Added automated CMA station-selection, severe-rain regression, future-list and non-injected Windows system-location coverage.
+
+## [2.1.2] - 2026-08-11
+
+- Removed the duplicate world-space hour/rainfall readout; the weather status bar remains the single forecast readout.
+- Kept axes and the toolbar visible during ordinary pointer movement.
+- Limited temporary label and toolbar hiding to an actual pressed scene drag beyond the movement threshold.
+- Added an Electron interaction regression test for hover visibility and drag restoration.
+
 ## [2.1.1] - 2026-08-11
 
 - Replaced the obsolete guessed Moji adapter with the Alibaba Cloud Marketplace professional latitude/longitude APPCode contract.
