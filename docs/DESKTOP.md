@@ -11,7 +11,7 @@ This derivative keeps the original Rainform Three.js/WebGL renderer and adds a W
 - If Moji current conditions succeed but its hourly token/request fails, Moji remains the current-condition source and only the hourly timeline is filled by Open-Meteo.
 - Open-Meteo also supplies city-name search. Coordinate-to-city display uses a no-key reverse-geocoding fallback because Open-Meteo's public geocoding endpoint accepts place names, not coordinate pairs.
 - CMA station observations include measured hourly precipitation, temperature, humidity, observation time and active rain alerts. A rain condition or warning may raise only the visual intensity floor; measured mm/h remains unchanged and is displayed separately.
-- The automatic panel separates the nearest-station observation from future weather. Only hours after the observation hour are listed through 24:00. When CMA's day/night forecast is wetter than the Open-Meteo grid, the UI shows the CMA condition as a trend rather than presenting the visual floor as a measured mm/h value.
+- The automatic panel lists the complete 00:00–24:00 day. Earlier rows are retained and labelled, the current row uses measured station precipitation, and future rows use forecast/trend data. The list automatically centers the current hour. When CMA's day/night forecast is wetter than the Open-Meteo grid, the UI shows the CMA condition as a trend rather than presenting the visual floor as a measured mm/h value.
 - Provider credentials are never exposed through the preload bridge or included in the renderer bundle.
 
 Example for a development launch in PowerShell:

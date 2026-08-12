@@ -6,6 +6,12 @@ All notable Rainform releases are documented here.
 
 - Public source repository governance, validation and noncommercial licensing.
 
+## [2.1.5] - 2026-08-12
+
+- Restored the full 00:00–24:00 list instead of hiding hours before the current observation.
+- Labelled rows as earlier, live observation or future, and automatically centered the current hour when the list opens.
+- Kept the current row on measured station precipitation while future CMA trend rows remain explicitly estimated.
+
 ## [2.1.4] - 2026-08-12
 
 - Prevented future hours from dropping to drizzle when the same CMA station's official day/night forecast remains heavy or moderate rain.

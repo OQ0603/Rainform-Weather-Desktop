@@ -16,9 +16,9 @@ An unofficial, noncommercial Windows desktop derivative that drives the original
 
 前往 [最新版本 Release](https://github.com/OQ0603/Rainform-Weather-Desktop/releases/latest)：
 
-- `Rainform-Weather-Desktop-2.1.4-x64.exe`：Windows x64 NSIS 安装包，可选择安装目录，并创建桌面及开始菜单快捷方式。
-- `Rainform-Weather-Desktop-2.1.4-x64-portable.zip`：解压后直接运行的便携版。
-- `Rainform-Weather-Desktop-2.1.4-Test-Results.md`：构建、中国气象局实况、在线天气及桌面冒烟测试记录。
+- `Rainform-Weather-Desktop-2.1.5-x64.exe`：Windows x64 NSIS 安装包，可选择安装目录，并创建桌面及开始菜单快捷方式。
+- `Rainform-Weather-Desktop-2.1.5-x64-portable.zip`：解压后直接运行的便携版。
+- `Rainform-Weather-Desktop-2.1.5-Test-Results.md`：构建、中国气象局实况、在线天气及桌面冒烟测试记录。
 
 当前安装包未购买商业代码签名证书，Windows SmartScreen 可能显示“未知发布者”。请从本仓库 Release 下载并核对 Release 中公布的 SHA256。
 
@@ -29,7 +29,7 @@ An unofficial, noncommercial Windows desktop derivative that drives the original
 - 墨迹天气主进程适配；无凭据或请求失败时，国内优先切换中国气象局实况站，最终才回退 Open-Meteo。
 - 国内无墨迹凭据时优先匹配最近的中国气象局实况站；后续雨势先服从中国气象局当天日间/夜间趋势，Open-Meteo只补齐小时刻度和温度。
 - 当前降雨实测值、实况站、更新时间和暴雨预警会明确显示；预警强度可增强画面但不会伪造 mm/h。
-- 自动面板将“当前监测实况”和“下一小时至 24:00 后续趋势”分开列出；气象局报大雨/中雨时，不再被 Open-Meteo 的毛毛雨结果降级。
+- 自动面板列出完整的 00:00–24:00：较早时段、当前实况和未来趋势都有明确标记，打开时自动滚到当前小时。
 - 将预报转换成 00:00–24:00 共 25 个降雨数据点。
 - 自动与手动降雨模式可来回切换，手动编辑后雨幕和声音立即变化。
 - 无雨时彻底停止雨幕、前景雨滴、瀑布、水花、粒子和雨声。
@@ -100,7 +100,7 @@ docs/                      # 桌面构建和原项目文档
 
 ## 验证摘要
 
-2.1.4 发布前完成了以下实际验证：
+2.1.5 发布前完成了以下实际验证：
 
 - 项目检查、15 项单元/界面契约测试和 Vite 生产构建通过。
 - 墨迹官方 APPCode/POST 经纬度请求契约通过模拟响应验证；大暴雨实况会覆盖当前小时的轻量 qpf 以驱动暴雨画面，但不会伪造实测 mm/h。

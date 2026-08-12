@@ -66,15 +66,18 @@ test('renderer uses IPC and never reads Moji environment secrets', () => {
   assert.match(controller, /weather\.alert\?\.label/);
 });
 
-test('automatic mode separates station observations from future hourly forecast', () => {
-  assert.match(html, /id="weather-hourly-title">下一小时至 24:00/);
+test('automatic mode shows the full day and separates past, current and future hours', () => {
+  assert.match(html, /id="weather-hourly-title">全天 00:00–24:00/);
   assert.match(html, /id="weather-hourly-list"/);
-  assert.match(controller, /Number\(item\.hour\) > currentHour/);
+  assert.match(controller, /period = hour < currentHour \? 'past' : hour === currentHour \? 'current' : 'future'/);
+  assert.match(controller, /period === 'past' \? '较早' : period === 'current' \? '实况' : '未来'/);
+  assert.match(controller, /elements\.hourlyList\.scrollTop = Math\.max\(0, elements\.hourlyList\.scrollTop \+ offset\)/);
   assert.match(controller, /Open-Meteo 逐小时预报/);
   assert.match(controller, /中国气象局趋势 · Open-Meteo小时刻度/);
   assert.match(controller, /selectedForecast\?\.precipitationEstimated/);
-  assert.match(controller, /rain\.textContent = item\.precipitationEstimated/);
+  assert.match(controller, /rain\.textContent = period === 'future' && item\.precipitationEstimated/);
   assert.match(styles, /\.weather-hourly-row/);
+  assert.match(styles, /\.weather-hourly-row\.is-current/);
 });
 
 test('a packaged executable has a non-injected Windows location smoke command', () => {

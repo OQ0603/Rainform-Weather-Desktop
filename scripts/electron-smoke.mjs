@@ -47,10 +47,13 @@ try {
     'automatic geolocation and weather sync',
     `${located.city} via ${located.provider}${packagedExecutable ? ' (packaged executable)' : ''}`
   );
-  const futureWeather = await page.locator('#weather-hourly-list .weather-hourly-row').count();
-  assert.ok(futureWeather > 0, 'expected future hourly weather rows through 24:00');
+  const allDayWeather = await page.locator('#weather-hourly-list .weather-hourly-row').count();
+  assert.equal(allDayWeather, 25, 'expected the full 00:00–24:00 list');
+  assert.ok(await page.locator('#weather-hourly-list .weather-hourly-row[data-period="past"]').count() > 0);
+  assert.equal(await page.locator('#weather-hourly-list .weather-hourly-row[data-period="current"]').count(), 1);
+  assert.ok(await page.locator('#weather-hourly-list .weather-hourly-row[data-period="future"]').count() > 0);
   assert.match(await page.locator('#weather-hourly-source').textContent(), /中国气象局趋势/);
-  record('station observation is followed by hourly forecast', `${futureWeather} future hours`);
+  record('full-day list separates past, current and future hours', `${allDayWeather} total hours`);
   await page.screenshot({ path: path.join(resultDirectory, 'desktop-initial-weather.png') });
 
   assert.equal(await page.locator('#scene-toolbar > button').count(), 2);

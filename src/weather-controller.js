@@ -145,39 +145,65 @@ function renderHourlyForecast(weather, phase = 'success', message = '') {
   const currentHour = Number.isInteger(Number(weather.currentHour))
     ? Number(weather.currentHour)
     : new Date().getHours();
-  const future = (Array.isArray(weather.hourly) ? weather.hourly : [])
-    .filter(item => Number(item.hour) > currentHour && Number(item.hour) <= 24);
+  const day = (Array.isArray(weather.hourly) ? weather.hourly : [])
+    .filter(item => Number(item.hour) >= 0 && Number(item.hour) <= 24);
   elements.hourlySource.textContent = hourlySourceLabel(weather);
-  if (!future.length) {
+  if (!day.length) {
     const empty = document.createElement('p');
     empty.className = 'weather-hourly-empty';
-    empty.textContent = '今天的逐小时预报已结束';
+    empty.textContent = '全天时段数据暂不可用';
     elements.hourlyList.append(empty);
     return;
   }
 
-  for (const item of future) {
+  let currentRow = null;
+  for (const item of day) {
+    const hour = Number(item.hour);
+    const period = hour < currentHour ? 'past' : hour === currentHour ? 'current' : 'future';
     const row = document.createElement('div');
-    row.className = 'weather-hourly-row';
+    row.className = `weather-hourly-row is-${period}`;
+    row.dataset.period = period;
     row.setAttribute('role', 'listitem');
 
     const time = document.createElement('time');
     time.textContent = item.label || `${String(item.hour).padStart(2, '0')}:00`;
+    if (item.time) time.dateTime = item.time;
+    const periodLabel = document.createElement('em');
+    periodLabel.textContent = period === 'past' ? '较早' : period === 'current' ? '实况' : '未来';
     const condition = document.createElement('strong');
-    condition.textContent = item.weatherText || '天气';
+    condition.textContent = period === 'current'
+      ? weather.current?.weatherText || item.weatherText || '实时天气'
+      : item.weatherText || '天气';
     const rain = document.createElement('span');
-    const amount = Number(item.precipitation) || 0;
+    const amount = period === 'current'
+      ? Number(weather.current?.precipitation) || 0
+      : Number(item.precipitation) || 0;
     rain.className = amount > 0 ? 'has-rain' : '';
-    rain.textContent = item.precipitationEstimated
+    rain.textContent = period === 'future' && item.precipitationEstimated
       ? '气象局趋势'
       : amount > 0
         ? `${formatRainfall(amount)} mm/h`
         : '无雨';
     const temperature = document.createElement('span');
-    temperature.textContent = `${Math.round(Number(item.temperature) || 0)}°C`;
+    const temperatureValue = period === 'current'
+      ? Number(weather.current?.temperature)
+      : Number(item.temperature);
+    temperature.textContent = `${Math.round(temperatureValue || 0)}°C`;
 
-    row.append(time, condition, rain, temperature);
+    row.append(time, periodLabel, condition, rain, temperature);
     elements.hourlyList.append(row);
+    if (period === 'current') currentRow = row;
+  }
+
+  if (currentRow) {
+    requestAnimationFrame(() => {
+      const listRect = elements.hourlyList.getBoundingClientRect();
+      const rowRect = currentRow.getBoundingClientRect();
+      const offset = rowRect.top
+        - listRect.top
+        - (listRect.height - rowRect.height) / 2;
+      elements.hourlyList.scrollTop = Math.max(0, elements.hourlyList.scrollTop + offset);
+    });
   }
 }
 
