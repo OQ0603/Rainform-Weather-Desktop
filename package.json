@@ -42,7 +42,7 @@
   },
   "devDependencies": {
     "electron": "42.7.0",
-    "electron-builder": "26.15.3",
+    "electron-builder": "26.18.0",
     "playwright": "1.62.1",
     "vite": "^6.4.3"
   },
